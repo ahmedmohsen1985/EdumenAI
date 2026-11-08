@@ -49,6 +49,9 @@
     studentSchool: document.getElementById('studentSchool'),
 
     // Task
+    taskUploadArea: document.getElementById('taskUploadArea'),
+    taskLoading: document.getElementById('taskLoading'),
+    changeTaskQuestionBtn: document.getElementById('changeTaskQuestionBtn'),
     taskDisplayBox: document.getElementById('taskDisplayBox'),
     taskDisplay: document.getElementById('taskDisplay'),
     taskPrompt: document.getElementById('taskPrompt'),
@@ -90,9 +93,12 @@
     removeAnswerPdfBtn: document.getElementById('removeAnswerPdfBtn'),
 
     // Workspace
+    workspaceSection: document.getElementById('workspaceSection'),
     transcribeBtn: document.getElementById('transcribeBtn'),
+    transcribeLoading: document.getElementById('transcribeLoading'),
     studentText: document.getElementById('studentText'),
     submitBtn: document.getElementById('submitBtn'),
+    evalLoading: document.getElementById('evalLoading'),
 
     // Report
     printHeader: document.getElementById('printHeader'),
@@ -132,10 +138,13 @@
       elements.studentSchool.value = elements.studentClass.value;
     });
 
-    // Task edit
+    // Task edit & change
     elements.toggleTaskEditBtn.addEventListener('click', showTaskEdit);
     elements.saveTaskEditBtn.addEventListener('click', saveTaskEdit);
     elements.cancelTaskEditBtn.addEventListener('click', hideTaskEdit);
+    if (elements.changeTaskQuestionBtn) {
+      elements.changeTaskQuestionBtn.addEventListener('click', resetTaskQuestion);
+    }
 
     // Task tabs
     elements.taskTabImage.addEventListener('click', () => switchTaskTab('image'));
@@ -216,7 +225,9 @@
       const decodedPrompt = decodeURIComponent(prompt);
       elements.taskPrompt.value = decodedPrompt;
       elements.taskDisplay.textContent = decodedPrompt;
+      if (elements.taskUploadArea) elements.taskUploadArea.classList.add('hidden');
       if (elements.taskDisplayBox) elements.taskDisplayBox.classList.remove('hidden');
+      if (elements.workspaceSection) elements.workspaceSection.classList.remove('hidden');
       state.taskPromptEdited = true;
     }
 
@@ -363,25 +374,31 @@
     extractTaskText(file);
   }
 
-  function removeTaskFile() {
+  function resetTaskQuestion() {
     state.taskFile = null;
-    elements.taskFilePreview.classList.add('hidden');
+    elements.taskPrompt.value = '';
+    elements.taskDisplay.textContent = '';
     elements.taskImageInput.value = '';
     elements.taskPdfInput.value = '';
     elements.taskFileThumb.innerHTML = 'FILE';
-    elements.taskPrompt.value = '';
-    elements.taskDisplay.textContent = '';
-    if (elements.taskDisplayBox) elements.taskDisplayBox.classList.add('hidden');
+    elements.taskFilePreview.classList.add('hidden');
+    elements.taskDisplayBox.classList.add('hidden');
+    if (elements.taskUploadArea) elements.taskUploadArea.classList.remove('hidden');
+    if (elements.workspaceSection) elements.workspaceSection.classList.add('hidden');
+  }
+
+  function removeTaskFile() {
+    resetTaskQuestion();
   }
 
   async function extractTaskText(file) {
-    setLoading(true, 'Reading task sheet...', 'Please wait while the AI extracts the task question.');
+    setTaskLoading(true);
 
     try {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('/api/transcribe', {
+      const response = await fetch('/api/extract-task', {
         method: 'POST',
         body: formData
       });
@@ -389,24 +406,36 @@
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Task extraction failed.');
+        throw new Error(result.error || 'Task question extraction failed.');
       }
 
-      const extracted = result.data.transcription || '';
+      const extracted = result.data.taskQuestion || '';
       if (extracted.trim()) {
         elements.taskPrompt.value = extracted.trim();
         elements.taskDisplay.textContent = extracted.trim();
+
+        // Hide upload area, reveal extracted question card, and unlock Step 2
+        if (elements.taskUploadArea) elements.taskUploadArea.classList.add('hidden');
         if (elements.taskDisplayBox) elements.taskDisplayBox.classList.remove('hidden');
+        if (elements.workspaceSection) elements.workspaceSection.classList.remove('hidden');
+
         state.taskPromptEdited = true;
-        showAlert('Task question extracted from uploaded sheet.', 'success');
+        showAlert('Exam question extracted successfully! Proceed to Step 2 to submit your article.', 'success');
+
+        // Smoothly scroll down to Step 2 so student sees the next step
+        setTimeout(() => {
+          if (elements.workspaceSection) {
+            elements.workspaceSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 150);
       } else {
-        showAlert('Could not extract any text from the task sheet. You can edit it manually.', 'error');
+        showAlert('Could not extract the exam question from the uploaded sheet. Please check the file or edit it manually.', 'error');
       }
     } catch (err) {
       console.error('Task extraction error:', err);
-      showAlert(err.message || 'Task extraction failed.', 'error');
+      showAlert(err.message || 'Task question extraction failed. Please try again.', 'error');
     } finally {
-      setLoading(false);
+      setTaskLoading(false);
     }
   }
 
@@ -453,7 +482,7 @@
       return;
     }
 
-    setLoading(true, 'Transcribing handwriting...', 'Please wait while the AI reads your work.');
+    setTranscribeLoading(true);
     state.isTranscribing = true;
 
     try {
@@ -477,12 +506,13 @@
       elements.studentText.value = transcription;
 
       showAlert('Transcription complete. Please check the text carefully before marking.', 'success');
+      elements.studentText.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (err) {
       console.error('Transcription error:', err);
       showAlert(err.message || 'Transcription failed. Please try again.', 'error');
     } finally {
       state.isTranscribing = false;
-      setLoading(false);
+      setTranscribeLoading(false);
     }
   }
 
@@ -525,7 +555,7 @@
 
     state.finalText = finalText;
 
-    setLoading(true, 'Marking your article...', 'The AI examiner is applying the Oxford AQA rubric.');
+    setEvalLoading(true);
     state.isEvaluating = true;
 
     try {
@@ -554,7 +584,7 @@
       showAlert(err.message || 'Evaluation failed. Please try again.', 'error');
     } finally {
       state.isEvaluating = false;
-      setLoading(false);
+      setEvalLoading(false);
     }
   }
 
@@ -650,17 +680,41 @@
   }
 
   // --- Helpers ---
+  function setTaskLoading(isLoading) {
+    if (elements.taskLoading) {
+      elements.taskLoading.classList.toggle('hidden', !isLoading);
+    }
+    if (elements.taskImageInput) elements.taskImageInput.disabled = isLoading;
+    if (elements.taskPdfInput) elements.taskPdfInput.disabled = isLoading;
+  }
+
+  function setTranscribeLoading(isLoading) {
+    if (elements.transcribeLoading) {
+      elements.transcribeLoading.classList.toggle('hidden', !isLoading);
+    }
+    if (elements.transcribeBtn) {
+      elements.transcribeBtn.disabled = isLoading;
+      elements.transcribeBtn.classList.toggle('opacity-60', isLoading);
+      elements.transcribeBtn.classList.toggle('cursor-not-allowed', isLoading);
+    }
+  }
+
+  function setEvalLoading(isLoading) {
+    if (elements.evalLoading) {
+      elements.evalLoading.classList.toggle('hidden', !isLoading);
+    }
+    if (elements.submitBtn) {
+      elements.submitBtn.disabled = isLoading;
+      elements.submitBtn.classList.toggle('opacity-60', isLoading);
+      elements.submitBtn.classList.toggle('cursor-not-allowed', isLoading);
+    }
+  }
+
   function setLoading(isLoading, title = '', text = '') {
-    if (isLoading) {
-      elements.loadingTitle.textContent = title;
-      elements.loadingText.textContent = text;
-      elements.loadingState.classList.remove('hidden');
-      elements.transcribeBtn.disabled = true;
-      elements.submitBtn.disabled = true;
-    } else {
-      elements.loadingState.classList.add('hidden');
-      elements.transcribeBtn.disabled = false;
-      elements.submitBtn.disabled = false;
+    if (elements.loadingState) {
+      elements.loadingState.classList.toggle('hidden', !isLoading);
+      if (elements.loadingTitle) elements.loadingTitle.textContent = title;
+      if (elements.loadingText) elements.loadingText.textContent = text;
     }
   }
 

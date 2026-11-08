@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   transcribeHandwriting,
+  extractTaskQuestion,
   evaluateArticle
 } from '../services/gemini.service.js';
 import {
@@ -40,6 +41,42 @@ const upload = multer({
       return cb(null, true);
     }
     cb(new Error('Only image files (JPG, PNG, WEBP) or PDF documents are allowed.'));
+  }
+});
+
+/**
+ * POST /api/extract-task
+ * Accepts an exam question image or PDF and extracts the task question text.
+ */
+router.post('/extract-task', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No task question file provided.' });
+    }
+
+    const mimeType = req.file.mimetype || 'application/octet-stream';
+    const taskQuestion = await extractTaskQuestion(req.file.buffer, mimeType);
+
+    if (!taskQuestion || !taskQuestion.trim()) {
+      return res.status(422).json({
+        success: false,
+        error: 'Could not detect an exam question in the uploaded file. Please make sure the image is clear or type the question manually.'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        taskQuestion: taskQuestion.trim(),
+        mimeType
+      }
+    });
+  } catch (err) {
+    console.error('[API /extract-task] Error:', err);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Task question extraction failed.'
+    });
   }
 });
 

@@ -1,3 +1,4 @@
+import '../config.js';
 import { GoogleGenAI, Type } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
@@ -6,12 +7,18 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey) {
-  console.warn('GEMINI_API_KEY is not set. Gemini services will fail.');
+let aiInstance = null;
+function getAi() {
+  if (!aiInstance) {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      throw new Error('GEMINI_API_KEY is not configured in environment.');
+    }
+    aiInstance = new GoogleGenAI({ apiKey: key });
+  }
+  return aiInstance;
 }
 
-const ai = new GoogleGenAI({ apiKey });
 let ex4CacheHandle = null;
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -106,7 +113,7 @@ export async function getOrCreateEx4Cache() {
   const ttlSeconds = Number(process.env.CACHE_TTL_SECONDS || 86400);
 
   try {
-    const cache = await ai.caches.create({
+    const cache = await getAi().caches.create({
       model: DEFAULT_MODEL,
       config: {
         displayName: 'ex4_marking_cache',
@@ -135,15 +142,11 @@ export function resetEx4Cache() {
  * Transcribes student handwriting from an image or scanned PDF buffer without correcting errors.
  */
 export async function transcribeHandwriting(fileBuffer, mimeType) {
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not configured.');
-  }
-
   const prompt = readPromptFile(TRANSCRIPTION_PROMPT_PATH);
   const normalizedMime = mimeType === 'application/pdf' ? 'application/pdf' : (mimeType || 'image/jpeg');
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await getAi().models.generateContent({
       model: DEFAULT_MODEL,
       contents: [
         {
@@ -160,6 +163,50 @@ export async function transcribeHandwriting(fileBuffer, mimeType) {
     return (response.text || '').trim();
   } catch (err) {
     console.error('[Gemini] Transcription failed:', err);
+    throw err;
+  }
+}
+
+/**
+ * Extracts the exam question text (prompt, bullet points, context) from an image or scanned PDF.
+ */
+export async function extractTaskQuestion(fileBuffer, mimeType) {
+  const normalizedMime = mimeType === 'application/pdf' ? 'application/pdf' : (mimeType || 'image/jpeg');
+
+  const taskPromptInstruction = `You are an Oxford AQA IGCSE ESL examination assistant.
+Extract the EXACT and COMPLETE Exercise 4 exam question text from this exam paper image or PDF.
+
+Include:
+- Any context / scenario (e.g., 'You see this announcement in your school magazine...', 'You have had a class discussion about...')
+- The article topic or headline (e.g., 'Articles wanted: Social media in modern life')
+- The core question/prompt (e.g., 'Have we become too dependent on social media? Write an article giving your views.')
+- Any bullet points, notes, or prompts to include
+- The word count guideline if present (e.g., 'Write your article in about 100-150 words.')
+
+Rules:
+1. Output ONLY the clean question text in clear English.
+2. Maintain paragraph breaks and bullet points.
+3. Do NOT include page numbers, exam barcodes, candidate numbers, or center headers.
+4. Do NOT answer the question. Only extract the question itself.`;
+
+  try {
+    const response = await getAi().models.generateContent({
+      model: DEFAULT_MODEL,
+      contents: [
+        {
+          inlineData: {
+            data: fileBuffer.toString('base64'),
+            mimeType: normalizedMime
+          }
+        },
+        { text: taskPromptInstruction }
+      ],
+      config: { temperature: 0.0 }
+    });
+
+    return (response.text || '').trim();
+  } catch (err) {
+    console.error('[Gemini] Task question extraction failed:', err);
     throw err;
   }
 }
@@ -186,10 +233,6 @@ function normalizeMarks(marks) {
  * Evaluates the final student text against the cached Exercise 4 rubric.
  */
 export async function evaluateArticle(studentName, taskPrompt, studentText) {
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not configured.');
-  }
-
   if (!taskPrompt || !studentText) {
     throw new Error('Task prompt and student text are required.');
   }
@@ -225,7 +268,7 @@ ${studentText}
       config.systemInstruction = `${coreRules}\n\n${ex4Rules}`;
     }
 
-    const response = await ai.models.generateContent({
+    const response = await getAi().models.generateContent({
       model: DEFAULT_MODEL,
       contents: [{ role: 'user', parts: [{ text: userMessage }] }],
       config

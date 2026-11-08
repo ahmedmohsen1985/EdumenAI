@@ -14,7 +14,7 @@ if (!apiKey) {
 const ai = new GoogleGenAI({ apiKey });
 let ex4CacheHandle = null;
 
-const DEFAULT_MODEL = 'gemini-1.5-flash-001';
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const CORE_PROMPT_PATH = path.join(__dirname, '../../prompts/core_marking_protocol.txt');
 const EX4_PROMPT_PATH = path.join(__dirname, '../../prompts/ex4_rubric_and_anchors.txt');
 const TRANSCRIPTION_PROMPT_PATH = path.join(__dirname, '../../prompts/ex4_transcription_prompt.txt');
@@ -194,7 +194,12 @@ export async function evaluateArticle(studentName, taskPrompt, studentText) {
     throw new Error('Task prompt and student text are required.');
   }
 
-  const cacheName = await getOrCreateEx4Cache();
+  let cacheName = null;
+  try {
+    cacheName = await getOrCreateEx4Cache();
+  } catch (cacheErr) {
+    console.warn('[Gemini] Context caching unavailable, falling back to direct system instruction:', cacheErr.message);
+  }
 
   const userMessage = `
 STUDENT FIRST NAME: ${studentName || 'Student'}
@@ -206,15 +211,24 @@ ${studentText}
 `;
 
   try {
+    const config = {
+      responseMimeType: 'application/json',
+      responseSchema: MarkingResponseSchema,
+      temperature: 0.0
+    };
+
+    if (cacheName) {
+      config.cachedContent = cacheName;
+    } else {
+      const coreRules = readPromptFile(CORE_PROMPT_PATH);
+      const ex4Rules = readPromptFile(EX4_PROMPT_PATH);
+      config.systemInstruction = `${coreRules}\n\n${ex4Rules}`;
+    }
+
     const response = await ai.models.generateContent({
       model: DEFAULT_MODEL,
       contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-      config: {
-        cachedContent: cacheName,
-        responseMimeType: 'application/json',
-        responseSchema: MarkingResponseSchema,
-        temperature: 0.0
-      }
+      config
     });
 
     const rawText = response.text || '{}';

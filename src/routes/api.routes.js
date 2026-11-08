@@ -17,35 +17,43 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// Multer storage: keep uploaded images in memory for direct forwarding to Gemini
+// Allowed MIME types and extensions for student work
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp', 'image/heic', 'image/heif'];
+const ALLOWED_PDF_TYPES = ['application/pdf'];
+const ALLOWED_UPLOAD_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_PDF_TYPES];
+
+function isAllowedUpload(file) {
+  if (!file) return false;
+  if (ALLOWED_UPLOAD_TYPES.includes(file.mimetype)) return true;
+  const ext = path.extname(file.originalname).toLowerCase();
+  return ext === '.pdf' || ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.heif'].includes(ext);
+}
+
+// Multer storage: keep uploaded files in memory for direct forwarding to Gemini
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10 MB
+    fileSize: 15 * 1024 * 1024 // 15 MB
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|webp|gif|bmp|heic/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-
-    if (extname && mimetype) {
+    if (isAllowedUpload(file)) {
       return cb(null, true);
     }
-    cb(new Error('Only image files are allowed for transcription.'));
+    cb(new Error('Only image files (JPG, PNG, WEBP) or PDF documents are allowed.'));
   }
 });
 
 /**
  * POST /api/transcribe
- * Accepts a handwriting image and returns verbatim OCR text.
+ * Accepts a handwriting image or scanned PDF and returns verbatim OCR text.
  */
-router.post('/transcribe', upload.single('image'), async (req, res) => {
+router.post('/transcribe', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ success: false, error: 'No image file provided.' });
+      return res.status(400).json({ success: false, error: 'No file provided.' });
     }
 
-    const mimeType = req.file.mimetype || 'image/jpeg';
+    const mimeType = req.file.mimetype || 'application/octet-stream';
     const transcription = await transcribeHandwriting(req.file.buffer, mimeType);
 
     res.json({

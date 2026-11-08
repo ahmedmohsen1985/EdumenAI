@@ -94,29 +94,57 @@ Use PILAR to guide content feedback, not to calculate marks mechanically.
 
 ## STANDARDISATION ANCHORS (Exercise 4)
 
-### Q4-A: Excellent Formal Article (Content 8, Language 14)
-Engaging third-person opening; clear purpose; well-developed paragraphs with examples; accurate, varied language; strong conclusion.
+Use these official Oxford AQA calibration responses as your reference set. Match the student's response to whichever anchor it most closely resembles, then adjust ±1 within the band if it is slightly stronger or weaker.
 
-### Q4-B: Good Semi-Formal Article (Content 6, Language 11)
-Friendly address to reader; relevant ideas with some development; mostly accurate with minor slips; clear structure.
+### ANCHOR Q4-C: 8/8 Content, 15/15 Language ("Poverty is a worldwide issue")
+A wide-ranging and clearly expressed argument that deals with complex ideas. Phrasing is clear with only minor quibbles. A lot of very effective work warrants full marks. Occasional errors ("cuture", "extremly") are visible, but many more accurately-spelled and well-chosen words dominate.
+TAKEAWAY: Wide-ranging + clearly expressed + complex ideas + effective work = 8/8 even with a few quibbles. Several spelling errors visible AND 15/15 because the WEIGHT of accurate, well-chosen vocabulary outweighs the errors. THIS IS THE KEY CALIBRATION POINT - error counting does NOT cap the Language mark; the proportion of accurate-to-inaccurate vocabulary does.
 
-### Q4-C: Adequate Discursive Article (Content 5, Language 8)
-Both sides of issue mentioned; some examples; simple and some complex sentences; vocabulary adequate but repetitive.
+### ANCHOR Q4-F: 7/8 Content, 13/15 Language ("Why people like sport")
+A fluent, ambitious article with varied vocabulary ("indispensable", "beneficial alternative", "incredibly astonishing") and secure complex sentences. It carries a couple of RECURRING slips (a subject-verb agreement pattern repeated across the piece, one or two comma splices) but these are the same error type recurring, not a spread of different failures, and accurate, well-chosen language clearly dominates. This is upper Level 4, 13/15, NOT Level 3: the recurring nature of the few errors and the strength of the vocabulary and structures place it near the top. Marking a piece like this 10 or 11 is TOO HARSH and contradicts the band descriptors; do not drag a strong piece down to the 10/15 anchor just because it is not flawless.
 
-### Q4-D: Limited Persuasive Article (Content 4, Language 6)
-Attempts to persuade but ideas under-developed; frequent errors; basic linking; tone inconsistent.
+### ANCHOR Q4-A: 5/8 Content, 10/15 Language ("Act of Kindness")
+A competent piece of writing addressing why help is important and ways to help, but the actual task ("how to help") is thin on detail. There is clarity but occasional inexact word choice ("Justifiably" used jarringly). Shape to the argument is present, but some of the logic needed clearer explanation. Spelling secure with variety of vocabulary, but used inaptly on occasion ("showed its validity").
+TAKEAWAY: Clear writing + some shape + thin detail = 5/8. Secure spelling + vocabulary variety + occasional inapt use = 10/15.
 
-### Q4-E: Weak Argumentative Article (Content 3, Language 4)
-Position stated but not supported; simple sentences; many errors; organisation weak.
+### ANCHOR Q4-E: 4/8 Content, 7/15 Language ("Now days, why we can help")
+Ideas address the question, comprehensible if hampered by delayed expression. Occasions where the message is unclear ("different time not specific time"). Competency in spelling with some errancy ("blanckets", "jop"), some mis-capitalisation, times when commas should have been full stops.
+TAKEAWAY: Ideas address task + delayed expression + some unclear moments = 4/8. Competent spelling with some errors + mis-capitalisation + comma/full-stop confusion = 7/15.
 
-### Q4-F: Very Weak Response (Content 2, Language 2)
-Few relevant ideas; serious language errors; communication often unclear.
+### ANCHOR Q4-D: 3/8 Content, 5/15 Language ("Why people in poverty need help")
+Ideas show valiant attempt - several ideas about how to help - but counterbalanced by extensive delays in expression. Several misspellings ("speacial", "opinine", "company"), some pronoun ambiguity, but demarcation competent.
+TAKEAWAY: Valiant attempt + extensive delays = 3/8. Several misspellings + pronoun ambiguity + competent demarcation = 5/15.
+
+### ANCHOR Q4-B: 2/8 Content, 5/15 Language ("What you can do to help")
+A repetitious response that does NOT actually answer the task ("how to help"), aside from an unclear tip to enquire about likes and dislikes. Times when it is uncertain what is meant. Spelling mainly secure but capitalisation errors evident, punctuation inexact in places, vocabulary lacks variety.
+TAKEAWAY: Doesn't answer the task + repetitive + unclear in places = 2/8. Mainly secure spelling + capitalisation errors + inexact punctuation + limited vocabulary = 5/15.
+
+### ANCHOR E4-A: 4/8 Content, 5/15 Language ("Going to university")
+Official examiner marks. Response: "Did you imagine how it benifical to study at university? This is what we are going to talk about about the studying at university has many benefits to gather..." Extreme length does not guarantee strong Content; the response presents relevant ideas but contains repetition, questionable statistics, unclear development and communication breakdown; mentioning both suggested areas does not automatically justify Content Band 3. This overall Content standard received 4/8. The response attempts vocabulary and varied structures, but frequent grammatical and spelling problems undermine security. This overall Language standard received 5/15.
+
+### ANCHOR E4-B: 4/8 Content, 8/15 Language ("Going to university")
+Official examiner marks. Response: "Its widely acknowledge that going to university is indamental thing in our daily life. Can you Imagine that people going to university has highly chance to work in better places..." Both suggested areas are present, but their development and clarity do not justify 5/8; relevant ideas alone do not guarantee Content Band 3; broken or incomplete development and unclear communication can keep Content at 4/8. Despite several spelling and grammatical errors the response shows enough vocabulary and structural variety, coherence and general accuracy for Language Band 3. This overall Language standard received 8/15, not 7/15; never let a long error table mechanically force this linguistic performance into Band 2.
+
+### ANCHOR 23/23: 8/8 Content, 15/15 Language (Semi-formal: technology in education)
+Bullet 1 asked generally why technology helps; bullet 2 asked "how YOU have used" technology. Student wrote formally for bullet 1 ("First of all, students can search information on computers... Secondly, teachers can share their documents...") then switched to 1st person for bullet 2 ("As a student, I have used those kinds of advanced technologies to help me study. I like to use my computer to take notes: it saves me a lot of time..."). Sequenced argument, all bullets developed with specific examples, well-phrased conclusion, good balance between bullets. Sophisticated vocabulary, variety of sentence structures, accurate spelling/punctuation, fluent writing.
+
+### ANCHOR 10/23: 3/8 Content, 7/15 Language (Technology)
+"Thes dys, computers, tablets and all electronic devices are the most helpful instruments to the students... through online we can learn so many things in the internet are always the best choice to make informations and for studies because it has so many choices to chose an information..." Unbalanced: one bullet gets all attention, the other gets "I prefer it." Lacks clear shape. Band 2 Content. Spelling reasonably good, attempts interesting words, BUT lack of full stops and shapelessness of sentences. Run-on sentences severely limit the mark. Band 3 Language. KEY: Unbalanced coverage caps Content. Run-on sentences cap Language.
 
 ### Q4-G: Minimal Response (Content 1, Language 1)
 One or two relevant phrases; almost no control of language.
 
 ### Q4-H: Off-Task or Blank (Content 0, Language 0)
 No awardable content.
+
+---
+
+## HOW TO USE THE ANCHORS
+1. Read the student's response.
+2. Ask which anchor it MOST CLOSELY resembles in quality.
+3. Award the same band as that anchor, then adjust ±1 within the band based on whether the student's response is slightly stronger or weaker than the anchor.
+4. Do NOT default to middle bands. If the response resembles Anchor Q4-C, award high. If it resembles Anchor Q4-B, award low.
+5. Examiners forgive minor blemishes when the overall weight of accurate writing is strong. Anchor Q4-C scored 15/15 with visible spelling errors. Match that generosity.
 
 ---
 

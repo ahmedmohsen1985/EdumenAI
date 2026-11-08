@@ -132,14 +132,15 @@ export function resetEx4Cache() {
 }
 
 /**
- * Transcribes student handwriting from an image buffer without correcting errors.
+ * Transcribes student handwriting from an image or scanned PDF buffer without correcting errors.
  */
-export async function transcribeHandwriting(imageBuffer, mimeType) {
+export async function transcribeHandwriting(fileBuffer, mimeType) {
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured.');
   }
 
   const prompt = readPromptFile(TRANSCRIPTION_PROMPT_PATH);
+  const normalizedMime = mimeType === 'application/pdf' ? 'application/pdf' : (mimeType || 'image/jpeg');
 
   try {
     const response = await ai.models.generateContent({
@@ -147,8 +148,8 @@ export async function transcribeHandwriting(imageBuffer, mimeType) {
       contents: [
         {
           inlineData: {
-            data: imageBuffer.toString('base64'),
-            mimeType
+            data: fileBuffer.toString('base64'),
+            mimeType: normalizedMime
           }
         },
         { text: prompt }

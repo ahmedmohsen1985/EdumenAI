@@ -1,10 +1,33 @@
 /**
  * EdumenAI Exercise 4 Frontend Application
- * Handles identity forms, image upload, transcription, evaluation, and report rendering.
+ * Handles Telegram auth, identity, task card, image/PDF upload, transcription, evaluation, and report rendering.
  */
 
 (function () {
   'use strict';
+
+  // --- Constants ---
+  const DEFAULT_TASK_PROMPT = `You see this announcement in your school magazine.
+
+Articles wanted: Social media in modern life
+Have we become too dependent on social media? Write an article giving your views.
+
+Write your article in about 100–150 words.`;
+
+  const OFFICIAL_SCHOOLS = [
+    'Capital',
+    'Capital Lotus',
+    'MES',
+    "MANARET AL'EMAN",
+    'AMGAD',
+    'SUMMITS',
+    'IMPERIAL',
+    'BRS',
+    'OXFORD G 1',
+    'OXFORD G 2 (ONLINE)'
+  ];
+
+  const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 
   // --- State ---
   const state = {
@@ -12,32 +35,78 @@
     finalText: '',
     evaluation: null,
     isTranscribing: false,
-    isEvaluating: false
+    isEvaluating: false,
+    taskPromptEdited: false,
+    activeTaskTab: 'image',
+    activeAnswerTab: 'image',
+    taskFile: null,
+    answerFile: null
   };
 
   // --- DOM Elements ---
   const elements = {
+    // Identity
+    telegramLoginArea: document.getElementById('telegramLoginArea'),
+    verifiedStudentInfo: document.getElementById('verifiedStudentInfo'),
+    verifiedStudentLabel: document.getElementById('verifiedStudentLabel'),
     studentName: document.getElementById('studentName'),
     studentTelegram: document.getElementById('studentTelegram'),
-    studentSchool: document.getElementById('studentSchool'),
+    telegramUserId: document.getElementById('telegramUserId'),
     studentClass: document.getElementById('studentClass'),
+    studentSchool: document.getElementById('studentSchool'),
+
+    // Task
+    taskDisplay: document.getElementById('taskDisplay'),
     taskPrompt: document.getElementById('taskPrompt'),
+    taskPromptEdit: document.getElementById('taskPromptEdit'),
+    taskEditArea: document.getElementById('taskEditArea'),
+    toggleTaskEditBtn: document.getElementById('toggleTaskEditBtn'),
+    saveTaskEditBtn: document.getElementById('saveTaskEditBtn'),
+    cancelTaskEditBtn: document.getElementById('cancelTaskEditBtn'),
+
+    // Task tabs
+    taskTabImage: document.getElementById('taskTabImage'),
+    taskTabPdf: document.getElementById('taskTabPdf'),
+    taskContentImage: document.getElementById('taskContentImage'),
+    taskContentPdf: document.getElementById('taskContentPdf'),
+    taskImageInput: document.getElementById('taskImageInput'),
+    taskPdfInput: document.getElementById('taskPdfInput'),
+    taskDropZoneImage: document.getElementById('taskDropZoneImage'),
+    taskDropZonePdf: document.getElementById('taskDropZonePdf'),
+    taskFilePreview: document.getElementById('taskFilePreview'),
+    taskFileName: document.getElementById('taskFileName'),
+    taskFileSize: document.getElementById('taskFileSize'),
+    taskFileThumb: document.getElementById('taskFileThumb'),
+    removeTaskFileBtn: document.getElementById('removeTaskFileBtn'),
+
+    // Answer tabs
+    answerTabImage: document.getElementById('answerTabImage'),
+    answerTabPdf: document.getElementById('answerTabPdf'),
+    answerContentImage: document.getElementById('answerContentImage'),
+    answerContentPdf: document.getElementById('answerContentPdf'),
+    answerImageInput: document.getElementById('answerImageInput'),
+    answerPdfInput: document.getElementById('answerPdfInput'),
+    answerDropZoneImage: document.getElementById('answerDropZoneImage'),
+    answerDropZonePdf: document.getElementById('answerDropZonePdf'),
+    answerImagePreview: document.getElementById('answerImagePreview'),
+    answerPreviewImg: document.getElementById('answerPreviewImg'),
+    answerPdfPreview: document.getElementById('answerPdfPreview'),
+    answerPdfName: document.getElementById('answerPdfName'),
+    answerPdfSize: document.getElementById('answerPdfSize'),
+    removeAnswerPdfBtn: document.getElementById('removeAnswerPdfBtn'),
+
+    // Workspace
+    transcribeBtn: document.getElementById('transcribeBtn'),
+    studentText: document.getElementById('studentText'),
+    submitBtn: document.getElementById('submitBtn'),
+
+    // Report
     printHeader: document.getElementById('printHeader'),
     printStudentName: document.getElementById('printStudentName'),
     printStudentClass: document.getElementById('printStudentClass'),
     printStudentSchool: document.getElementById('printStudentSchool'),
     printDate: document.getElementById('printDate'),
     printTaskPrompt: document.getElementById('printTaskPrompt'),
-    dropZone: document.getElementById('dropZone'),
-    imageInput: document.getElementById('imageInput'),
-    imagePreview: document.getElementById('imagePreview'),
-    previewImg: document.getElementById('previewImg'),
-    transcribeBtn: document.getElementById('transcribeBtn'),
-    studentText: document.getElementById('studentText'),
-    submitBtn: document.getElementById('submitBtn'),
-    loadingState: document.getElementById('loadingState'),
-    loadingTitle: document.getElementById('loadingTitle'),
-    loadingText: document.getElementById('loadingText'),
     reportSection: document.getElementById('reportSection'),
     alertContainer: document.getElementById('alertContainer'),
     totalMark: document.getElementById('totalMark'),
@@ -49,21 +118,56 @@
     noErrorsMsg: document.getElementById('noErrorsMsg'),
     contentFeedbackList: document.getElementById('contentFeedbackList'),
     correctedVersion: document.getElementById('correctedVersion'),
-    printBtn: document.getElementById('printBtn')
+    printBtn: document.getElementById('printBtn'),
+
+    // Loading
+    loadingState: document.getElementById('loadingState'),
+    loadingTitle: document.getElementById('loadingTitle'),
+    loadingText: document.getElementById('loadingText')
   };
 
   // --- Initialization ---
   document.addEventListener('DOMContentLoaded', () => {
+    initTaskPrompt();
     populateIdentityFromUrl();
     bindEvents();
   });
 
+  function initTaskPrompt() {
+    elements.taskPrompt.value = DEFAULT_TASK_PROMPT;
+    elements.taskDisplay.textContent = DEFAULT_TASK_PROMPT;
+  }
+
   function bindEvents() {
-    elements.dropZone.addEventListener('click', () => elements.imageInput.click());
-    elements.dropZone.addEventListener('dragover', handleDragOver);
-    elements.dropZone.addEventListener('dragleave', handleDragLeave);
-    elements.dropZone.addEventListener('drop', handleDrop);
-    elements.imageInput.addEventListener('change', handleFileSelect);
+    // Identity
+    elements.studentClass.addEventListener('change', () => {
+      elements.studentSchool.value = elements.studentClass.value;
+    });
+
+    // Task edit
+    elements.toggleTaskEditBtn.addEventListener('click', showTaskEdit);
+    elements.saveTaskEditBtn.addEventListener('click', saveTaskEdit);
+    elements.cancelTaskEditBtn.addEventListener('click', hideTaskEdit);
+
+    // Task tabs
+    elements.taskTabImage.addEventListener('click', () => switchTaskTab('image'));
+    elements.taskTabPdf.addEventListener('click', () => switchTaskTab('pdf'));
+
+    // Task upload
+    bindDropZone(elements.taskDropZoneImage, elements.taskImageInput, handleTaskFileSelect);
+    bindDropZone(elements.taskDropZonePdf, elements.taskPdfInput, handleTaskFileSelect);
+    elements.removeTaskFileBtn.addEventListener('click', removeTaskFile);
+
+    // Answer tabs
+    elements.answerTabImage.addEventListener('click', () => switchAnswerTab('image'));
+    elements.answerTabPdf.addEventListener('click', () => switchAnswerTab('pdf'));
+
+    // Answer upload
+    bindDropZone(elements.answerDropZoneImage, elements.answerImageInput, handleAnswerFileSelect);
+    bindDropZone(elements.answerDropZonePdf, elements.answerPdfInput, handleAnswerFileSelect);
+    elements.removeAnswerPdfBtn.addEventListener('click', removeAnswerFile);
+
+    // Actions
     elements.transcribeBtn.addEventListener('click', handleTranscribe);
     elements.submitBtn.addEventListener('click', handleSubmit);
     elements.printBtn.addEventListener('click', () => window.print());
@@ -72,84 +176,295 @@
     });
   }
 
+  // --- Telegram Auth (global callback required by widget) ---
+  window.onTelegramAuth = function (user) {
+    if (!user || !user.id) return;
+
+    elements.telegramLoginArea.classList.add('hidden');
+    elements.verifiedStudentInfo.classList.remove('hidden');
+
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+    elements.studentName.value = fullName;
+    elements.studentTelegram.value = user.username ? `@${user.username}` : '';
+    elements.telegramUserId.value = String(user.id);
+
+    const label = fullName
+      ? `Verified as ${fullName} (Telegram ID: ${user.id})`
+      : `Verified with Telegram ID: ${user.id}`;
+    elements.verifiedStudentLabel.textContent = label;
+  };
+
   // --- URL Parameter Auto-Population ---
   function populateIdentityFromUrl() {
     const params = new URLSearchParams(window.location.search);
 
-    const setValue = (element, key, fallbackKey) => {
-      const value = params.get(key) || params.get(fallbackKey);
-      if (value && element) {
-        element.value = decodeURIComponent(value);
-      }
-    };
+    const tgId = params.get('tg_id');
+    const name = params.get('name');
+    const school = params.get('school');
+    const className = params.get('class');
+    const prompt = params.get('prompt');
 
-    setValue(elements.studentName, 'name', 'studentName');
-    setValue(elements.studentTelegram, 'telegram', 'telegramId');
-    setValue(elements.studentSchool, 'school', 'studentSchool');
-    setValue(elements.studentClass, 'class', 'className');
-    setValue(elements.taskPrompt, 'prompt', 'taskPrompt');
-  }
+    let identityFromUrl = false;
 
-  // --- File Upload Handling ---
-  function handleDragOver(e) {
-    e.preventDefault();
-    elements.dropZone.classList.add('border-brand-gold', 'bg-brand-cream');
-  }
+    if (tgId) {
+      elements.telegramUserId.value = decodeURIComponent(tgId);
+      identityFromUrl = true;
+    }
 
-  function handleDragLeave(e) {
-    e.preventDefault();
-    elements.dropZone.classList.remove('border-brand-gold', 'bg-brand-cream');
-  }
+    if (name) {
+      elements.studentName.value = decodeURIComponent(name);
+      identityFromUrl = true;
+    }
 
-  function handleDrop(e) {
-    e.preventDefault();
-    elements.dropZone.classList.remove('border-brand-gold', 'bg-brand-cream');
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      loadImagePreview(files[0]);
+    const groupValue = className || school;
+    if (groupValue) {
+      const decoded = decodeURIComponent(groupValue);
+      setSelectValue(elements.studentClass, decoded);
+      elements.studentSchool.value = decoded;
+      identityFromUrl = true;
+    }
+
+    if (prompt) {
+      const decodedPrompt = decodeURIComponent(prompt);
+      elements.taskPrompt.value = decodedPrompt;
+      elements.taskDisplay.textContent = decodedPrompt;
+      state.taskPromptEdited = true;
+    }
+
+    if (identityFromUrl) {
+      elements.telegramLoginArea.classList.add('hidden');
+      elements.verifiedStudentInfo.classList.remove('hidden');
+      elements.verifiedStudentLabel.textContent = 'Identity loaded from your learning platform.';
     }
   }
 
-  function handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (file) {
-      loadImagePreview(file);
+  function setSelectValue(select, value) {
+    const match = Array.from(select.options).find((opt) => opt.value.toLowerCase() === value.toLowerCase());
+    if (match) {
+      select.value = match.value;
+    } else {
+      // Add a temporary option for unknown values so nothing is lost
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+      select.value = value;
     }
   }
 
-  function loadImagePreview(file) {
-    if (!file.type.startsWith('image/')) {
-      showAlert('Please upload an image file.', 'error');
+  // --- Tab Switching ---
+  function switchTaskTab(tab) {
+    state.activeTaskTab = tab;
+    elements.taskTabImage.className = tab === 'image'
+      ? 'task-tab flex-1 py-2 text-sm font-medium text-brand-navy border-b-2 border-brand-navy bg-brand-cream/30'
+      : 'task-tab flex-1 py-2 text-sm font-medium text-gray-500 border-b-2 border-transparent hover:text-brand-navy';
+    elements.taskTabPdf.className = tab === 'pdf'
+      ? 'task-tab flex-1 py-2 text-sm font-medium text-brand-navy border-b-2 border-brand-navy bg-brand-cream/30'
+      : 'task-tab flex-1 py-2 text-sm font-medium text-gray-500 border-b-2 border-transparent hover:text-brand-navy';
+    elements.taskContentImage.classList.toggle('hidden', tab !== 'image');
+    elements.taskContentPdf.classList.toggle('hidden', tab !== 'pdf');
+  }
+
+  function switchAnswerTab(tab) {
+    state.activeAnswerTab = tab;
+    elements.answerTabImage.className = tab === 'image'
+      ? 'answer-tab flex-1 py-2 text-sm font-medium text-brand-navy border-b-2 border-brand-navy bg-brand-cream/30'
+      : 'answer-tab flex-1 py-2 text-sm font-medium text-gray-500 border-b-2 border-transparent hover:text-brand-navy';
+    elements.answerTabPdf.className = tab === 'pdf'
+      ? 'answer-tab flex-1 py-2 text-sm font-medium text-brand-navy border-b-2 border-brand-navy bg-brand-cream/30'
+      : 'answer-tab flex-1 py-2 text-sm font-medium text-gray-500 border-b-2 border-transparent hover:text-brand-navy';
+    elements.answerContentImage.classList.toggle('hidden', tab !== 'image');
+    elements.answerContentPdf.classList.toggle('hidden', tab !== 'pdf');
+  }
+
+  // --- Task Prompt Edit ---
+  function showTaskEdit() {
+    elements.taskPromptEdit.value = elements.taskPrompt.value;
+    elements.taskEditArea.classList.remove('hidden');
+    elements.toggleTaskEditBtn.classList.add('hidden');
+  }
+
+  function hideTaskEdit() {
+    elements.taskEditArea.classList.add('hidden');
+    elements.toggleTaskEditBtn.classList.remove('hidden');
+  }
+
+  function saveTaskEdit() {
+    const value = elements.taskPromptEdit.value.trim();
+    if (!value) {
+      showAlert('Task question cannot be empty.', 'error');
       return;
     }
+    elements.taskPrompt.value = value;
+    elements.taskDisplay.textContent = value;
+    state.taskPromptEdited = true;
+    hideTaskEdit();
+  }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      elements.previewImg.src = event.target.result;
-      elements.imagePreview.classList.remove('hidden');
-    };
-    reader.readAsDataURL(file);
+  // --- Drop Zone Helpers ---
+  function bindDropZone(zone, input, handler) {
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      zone.classList.add('border-brand-gold', 'bg-brand-cream');
+    });
+    zone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      zone.classList.remove('border-brand-gold', 'bg-brand-cream');
+    });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('border-brand-gold', 'bg-brand-cream');
+      if (e.dataTransfer.files.length > 0) {
+        handler(e.dataTransfer.files[0]);
+      }
+    });
+    input.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        handler(e.target.files[0]);
+      }
+    });
+  }
 
-    // Store the file on the input for later upload
-    const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(file);
-    elements.imageInput.files = dataTransfer.files;
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function validateFile(file, acceptedTypes) {
+    if (file.size > MAX_FILE_SIZE) {
+      showAlert('File is too large. Maximum size is 15 MB.', 'error');
+      return false;
+    }
+    if (!acceptedTypes.includes(file.type) && !acceptedTypes.some((t) => file.name.toLowerCase().endsWith(t.replace('*', '')))) {
+      showAlert('File type not accepted for this upload.', 'error');
+      return false;
+    }
+    return true;
+  }
+
+  // --- Task File Handling ---
+  function handleTaskFileSelect(file) {
+    const accepted = state.activeTaskTab === 'image'
+      ? ['image/jpeg', 'image/png', 'image/webp', 'image/heic']
+      : ['application/pdf', '.pdf'];
+
+    if (!validateFile(file, accepted)) return;
+
+    state.taskFile = file;
+
+    // Show preview
+    elements.taskFileName.textContent = file.name;
+    elements.taskFileSize.textContent = formatFileSize(file.size);
+    elements.taskFilePreview.classList.remove('hidden');
+
+    if (state.activeTaskTab === 'image' && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        elements.taskFileThumb.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover rounded" alt="Task preview">`;
+      };
+      reader.readAsDataURL(file);
+    } else {
+      elements.taskFileThumb.innerHTML = 'PDF';
+    }
+
+    // Auto-extract task text
+    extractTaskText(file);
+  }
+
+  function removeTaskFile() {
+    state.taskFile = null;
+    elements.taskFilePreview.classList.add('hidden');
+    elements.taskImageInput.value = '';
+    elements.taskPdfInput.value = '';
+    elements.taskFileThumb.innerHTML = 'FILE';
+  }
+
+  async function extractTaskText(file) {
+    setLoading(true, 'Reading task sheet...', 'Please wait while the AI extracts the task question.');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Task extraction failed.');
+      }
+
+      const extracted = result.data.transcription || '';
+      if (extracted.trim()) {
+        elements.taskPrompt.value = extracted.trim();
+        elements.taskDisplay.textContent = extracted.trim();
+        state.taskPromptEdited = true;
+        showAlert('Task question extracted from uploaded sheet.', 'success');
+      } else {
+        showAlert('Could not extract any text from the task sheet. You can edit it manually.', 'error');
+      }
+    } catch (err) {
+      console.error('Task extraction error:', err);
+      showAlert(err.message || 'Task extraction failed.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --- Answer File Handling ---
+  function handleAnswerFileSelect(file) {
+    const accepted = state.activeAnswerTab === 'image'
+      ? ['image/jpeg', 'image/png', 'image/webp', 'image/heic']
+      : ['application/pdf', '.pdf'];
+
+    if (!validateFile(file, accepted)) return;
+
+    state.answerFile = file;
+
+    if (state.activeAnswerTab === 'image' && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        elements.answerPreviewImg.src = e.target.result;
+        elements.answerImagePreview.classList.remove('hidden');
+      };
+      reader.readAsDataURL(file);
+      elements.answerPdfPreview.classList.add('hidden');
+    } else {
+      elements.answerPdfName.textContent = file.name;
+      elements.answerPdfSize.textContent = formatFileSize(file.size);
+      elements.answerPdfPreview.classList.remove('hidden');
+      elements.answerImagePreview.classList.add('hidden');
+    }
+  }
+
+  function removeAnswerFile() {
+    state.answerFile = null;
+    elements.answerImageInput.value = '';
+    elements.answerPdfInput.value = '';
+    elements.answerImagePreview.classList.add('hidden');
+    elements.answerPdfPreview.classList.add('hidden');
+    elements.answerPreviewImg.src = '';
   }
 
   // --- Transcription ---
   async function handleTranscribe() {
-    const file = elements.imageInput.files[0];
+    const file = state.answerFile;
     if (!file) {
-      showAlert('Please upload a handwriting photo first.', 'error');
+      showAlert('Please upload your handwritten article first (image or PDF).', 'error');
       return;
     }
 
-    setLoading(true, 'Transcribing handwriting...', 'Please wait while the AI reads your image.');
+    setLoading(true, 'Transcribing handwriting...', 'Please wait while the AI reads your work.');
     state.isTranscribing = true;
 
     try {
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append('file', file);
 
       const response = await fetch('/api/transcribe', {
         method: 'POST',
@@ -182,9 +497,20 @@
     const taskPrompt = elements.taskPrompt.value.trim();
     const finalText = elements.studentText.value.trim();
 
+    if (!elements.studentName.value.trim()) {
+      showAlert('Please enter your full name.', 'error');
+      elements.studentName.focus();
+      return;
+    }
+
+    if (!elements.studentClass.value) {
+      showAlert('Please select your class / group.', 'error');
+      elements.studentClass.focus();
+      return;
+    }
+
     if (!taskPrompt) {
-      showAlert('Please enter the task prompt.', 'error');
-      elements.taskPrompt.focus();
+      showAlert('Task question is missing. Please enter or upload it.', 'error');
       return;
     }
 
@@ -196,9 +522,9 @@
 
     const student = {
       name: elements.studentName.value.trim(),
-      telegram: elements.studentTelegram.value.trim(),
-      school: elements.studentSchool.value.trim(),
-      className: elements.studentClass.value.trim()
+      telegram: elements.telegramUserId.value.trim() || elements.studentTelegram.value.trim(),
+      school: elements.studentSchool.value.trim() || elements.studentClass.value,
+      className: elements.studentClass.value
     };
 
     state.finalText = finalText;
@@ -263,8 +589,8 @@
     if (!elements.printHeader) return;
 
     const name = elements.studentName.value.trim() || 'Unknown';
-    const school = elements.studentSchool.value.trim() || '-';
-    const className = elements.studentClass.value.trim() || '-';
+    const school = elements.studentSchool.value.trim() || elements.studentClass.value || '-';
+    const className = elements.studentClass.value || '-';
     const taskPrompt = elements.taskPrompt.value.trim() || '-';
 
     if (elements.printStudentName) elements.printStudentName.textContent = name;
@@ -323,7 +649,6 @@
   }
 
   function renderCorrectedVersion(html) {
-    // Sanitize the corrected version: only allow mark tags with specific classes
     const sanitized = sanitizeCorrectedHtml(html);
     elements.correctedVersion.innerHTML = sanitized;
   }
@@ -358,7 +683,6 @@
     `;
     elements.alertContainer.classList.remove('hidden');
 
-    // Auto-hide success alerts after 5 seconds
     if (!isError) {
       setTimeout(() => {
         elements.alertContainer.classList.add('hidden');
@@ -400,7 +724,6 @@
           }
         }
 
-        // Convert other block elements to paragraphs/divs
         const wrapper = document.createElement(tag === 'div' || tag === 'p' ? 'p' : 'span');
         Array.from(node.childNodes).forEach((child) => copyNode(child, wrapper));
         parent.appendChild(wrapper);

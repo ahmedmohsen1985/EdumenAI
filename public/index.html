@@ -53,33 +53,115 @@
           <svg class="w-5 h-5 text-brand-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
           Student Identity
         </h2>
+
+        <!-- Telegram Login Widget (shown only when no URL identity params) -->
+        <div id="telegramLoginArea" class="text-center p-6 bg-brand-cream/60 rounded-xl border-2 border-dashed border-brand-gold/60 mb-4">
+          <p class="text-sm text-gray-700 font-medium mb-3">Verify your identity with Telegram to access this worksheet:</p>
+          <script async src="https://telegram.org/js/telegram-widget.js?22"
+            data-telegram-login="EdumenAI_Report_Bot"
+            data-size="large"
+            data-radius="10"
+            data-onauth="onTelegramAuth(user)"
+            data-request-access="write">
+          </script>
+        </div>
+
+        <!-- Verified identity display -->
+        <div id="verifiedStudentInfo" class="hidden mb-4 p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+          <p class="text-sm text-emerald-800 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <span id="verifiedStudentLabel">Identity verified</span>
+          </p>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label for="studentName" class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
             <input type="text" id="studentName" name="name" placeholder="e.g. Ahmed Hassan" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition">
           </div>
           <div>
-            <label for="studentTelegram" class="block text-sm font-medium text-gray-700 mb-1">Telegram Username / ID</label>
-            <input type="text" id="studentTelegram" name="telegram" placeholder="@username or numeric ID" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition">
-          </div>
-          <div>
-            <label for="studentSchool" class="block text-sm font-medium text-gray-700 mb-1">School</label>
-            <input type="text" id="studentSchool" name="school" placeholder="e.g. Capital International School" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition">
-          </div>
-          <div>
-            <label for="studentClass" class="block text-sm font-medium text-gray-700 mb-1">Class</label>
-            <input type="text" id="studentClass" name="className" placeholder="e.g. Year 10A" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition">
+            <label for="studentClass" class="block text-sm font-medium text-gray-700 mb-1">Class / Group</label>
+            <select id="studentClass" name="className" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition bg-white">
+              <option value="" disabled selected>-- Select your class --</option>
+              <option value="Capital">Capital</option>
+              <option value="Capital Lotus">Capital Lotus</option>
+              <option value="MES">MES</option>
+              <option value="MANARET AL'EMAN">MANARET AL'EMAN</option>
+              <option value="AMGAD">AMGAD</option>
+              <option value="SUMMITS">SUMMITS</option>
+              <option value="IMPERIAL">IMPERIAL</option>
+              <option value="BRS">BRS</option>
+              <option value="OXFORD G 1">OXFORD G 1</option>
+              <option value="OXFORD G 2 (ONLINE)">OXFORD G 2 (ONLINE)</option>
+            </select>
+            <input type="hidden" id="studentSchool" name="school">
+            <input type="hidden" id="telegramUserId" name="telegramUserId">
+            <input type="hidden" id="studentTelegram" name="telegram">
           </div>
         </div>
       </section>
 
-      <!-- Task Prompt -->
+      <!-- Task Prompt Card -->
       <section id="taskSection" class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
         <h2 class="text-lg font-semibold text-brand-navy mb-4 flex items-center gap-2">
           <svg class="w-5 h-5 text-brand-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-          Task Prompt
+          Exercise 4 Task Question
         </h2>
-        <textarea id="taskPrompt" rows="4" placeholder="Paste the Exercise 4 article prompt here..." class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition resize-y"></textarea>
+
+        <div class="bg-brand-cream/40 border border-brand-gold/30 rounded-xl p-5 mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-brand-gold uppercase tracking-wider">Task</span>
+            <button id="toggleTaskEditBtn" type="button" class="text-xs text-gray-500 hover:text-brand-navy underline">Change Question</button>
+          </div>
+          <div id="taskDisplay" class="text-gray-800 font-medium whitespace-pre-line leading-relaxed"></div>
+          <input type="hidden" id="taskPrompt" value="">
+        </div>
+
+        <!-- Task edit area (hidden by default) -->
+        <div id="taskEditArea" class="hidden mb-4">
+          <label for="taskPromptEdit" class="block text-sm font-medium text-gray-700 mb-1">Edit task question</label>
+          <textarea id="taskPromptEdit" rows="5" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition resize-y"></textarea>
+          <div class="flex justify-end gap-2 mt-2">
+            <button id="cancelTaskEditBtn" type="button" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+            <button id="saveTaskEditBtn" type="button" class="px-4 py-2 text-sm bg-brand-navy text-white rounded-lg hover:bg-brand-navy/90">Save</button>
+          </div>
+        </div>
+
+        <!-- Task sheet upload -->
+        <div class="border-t border-gray-100 pt-4">
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Or upload your own task sheet</p>
+          <div class="flex border-b border-gray-200 mb-3">
+            <button type="button" id="taskTabImage" class="task-tab flex-1 py-2 text-sm font-medium text-brand-navy border-b-2 border-brand-navy bg-brand-cream/30">Image</button>
+            <button type="button" id="taskTabPdf" class="task-tab flex-1 py-2 text-sm font-medium text-gray-500 border-b-2 border-transparent hover:text-brand-navy">PDF</button>
+          </div>
+
+          <div id="taskContentImage" class="task-content">
+            <div id="taskDropZoneImage" class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-brand-gold hover:bg-brand-cream/30 transition cursor-pointer">
+              <input type="file" id="taskImageInput" accept="image/*" class="hidden">
+              <svg class="w-8 h-8 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+              <p class="text-sm text-gray-600 font-medium">Click or drag a task photo here</p>
+              <p class="text-xs text-gray-500 mt-1">JPG, PNG, WEBP up to 15 MB</p>
+            </div>
+          </div>
+
+          <div id="taskContentPdf" class="task-content hidden">
+            <div id="taskDropZonePdf" class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-brand-gold hover:bg-brand-cream/30 transition cursor-pointer">
+              <input type="file" id="taskPdfInput" accept=".pdf,application/pdf" class="hidden">
+              <svg class="w-8 h-8 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+              <p class="text-sm text-gray-600 font-medium">Click or drag a task PDF here</p>
+              <p class="text-xs text-gray-500 mt-1">PDF up to 15 MB</p>
+            </div>
+          </div>
+
+          <div id="taskFilePreview" class="hidden mt-3 p-3 bg-brand-cream/40 rounded-lg flex items-center gap-3">
+            <div id="taskFileThumb" class="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">FILE</div>
+            <div class="flex-1 min-w-0">
+              <p id="taskFileName" class="text-sm font-medium text-gray-800 truncate"></p>
+              <p id="taskFileSize" class="text-xs text-gray-500"></p>
+            </div>
+            <button id="removeTaskFileBtn" type="button" class="text-xs text-red-600 hover:text-red-800 font-medium">Remove</button>
+          </div>
+        </div>
       </section>
 
       <!-- Workspace -->
@@ -89,17 +171,41 @@
           Writing Workspace
         </h2>
 
-        <!-- Upload Drop Zone -->
-        <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-brand-gold hover:bg-brand-cream/50 transition cursor-pointer mb-4">
-          <input type="file" id="imageInput" accept="image/*" capture="environment" class="hidden">
-          <svg class="w-10 h-10 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-          <p class="text-sm text-gray-600 font-medium">Click or drag a handwriting photo here</p>
-          <p class="text-xs text-gray-500 mt-1">JPG, PNG, WEBP up to 10 MB</p>
+        <!-- Answer Upload Tabs -->
+        <div class="flex border-b border-gray-200 mb-4">
+          <button type="button" id="answerTabImage" class="answer-tab flex-1 py-2 text-sm font-medium text-brand-navy border-b-2 border-brand-navy bg-brand-cream/30">Upload Image</button>
+          <button type="button" id="answerTabPdf" class="answer-tab flex-1 py-2 text-sm font-medium text-gray-500 border-b-2 border-transparent hover:text-brand-navy">Upload PDF</button>
         </div>
 
-        <!-- Image Preview -->
-        <div id="imagePreview" class="hidden mb-4">
-          <img id="previewImg" src="" alt="Uploaded handwriting" class="max-h-64 rounded-lg border border-gray-200 mx-auto">
+        <!-- Image Upload -->
+        <div id="answerContentImage" class="answer-content">
+          <div id="answerDropZoneImage" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-brand-gold hover:bg-brand-cream/30 transition cursor-pointer mb-4">
+            <input type="file" id="answerImageInput" accept="image/*" capture="environment" class="hidden">
+            <svg class="w-10 h-10 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <p class="text-sm text-gray-600 font-medium">Click or drag a handwriting photo here</p>
+            <p class="text-xs text-gray-500 mt-1">JPG, PNG, WEBP up to 15 MB</p>
+          </div>
+          <div id="answerImagePreview" class="hidden mb-4">
+            <img id="answerPreviewImg" src="" alt="Uploaded handwriting" class="max-h-64 rounded-lg border border-gray-200 mx-auto">
+          </div>
+        </div>
+
+        <!-- PDF Upload -->
+        <div id="answerContentPdf" class="answer-content hidden">
+          <div id="answerDropZonePdf" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-brand-gold hover:bg-brand-cream/30 transition cursor-pointer mb-4">
+            <input type="file" id="answerPdfInput" accept=".pdf,application/pdf" class="hidden">
+            <svg class="w-10 h-10 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+            <p class="text-sm text-gray-600 font-medium">Click or drag your scanned PDF here</p>
+            <p class="text-xs text-gray-500 mt-1">PDF up to 15 MB</p>
+          </div>
+          <div id="answerPdfPreview" class="hidden mb-4 p-4 bg-brand-cream/40 rounded-lg flex items-center gap-3">
+            <svg class="w-10 h-10 text-brand-navy" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+            <div class="flex-1 min-w-0">
+              <p id="answerPdfName" class="text-sm font-medium text-gray-800 truncate"></p>
+              <p id="answerPdfSize" class="text-xs text-gray-500"></p>
+            </div>
+            <button id="removeAnswerPdfBtn" type="button" class="text-xs text-red-600 hover:text-red-800 font-medium">Remove</button>
+          </div>
         </div>
 
         <!-- Transcribe Button -->

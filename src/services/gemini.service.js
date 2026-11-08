@@ -157,10 +157,20 @@ export async function transcribeHandwriting(fileBuffer, mimeType) {
         },
         { text: prompt }
       ],
-      config: { temperature: 0.0 }
+      config: {
+        systemInstruction: prompt,
+        temperature: 0.0
+      }
     });
 
-    return (response.text || '').trim();
+    let text = (response.text || '').trim();
+
+    // Post-processing cleanups for dangling artifacts from crossed-out greetings
+    // e.g., if "Dear Mohamed," was crossed out, do not leave "Dear ," before "Dear friends,"
+    text = text.replace(/^Dear\s*,\s*(Dear\s+friends\b)/im, '$1');
+    text = text.replace(/Dear\s*,\s*Dear\s+/i, 'Dear ');
+
+    return text;
   } catch (err) {
     console.error('[Gemini] Transcription failed:', err);
     throw err;

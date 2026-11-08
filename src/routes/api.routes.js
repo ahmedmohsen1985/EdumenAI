@@ -10,7 +10,8 @@ import {
 import {
   notifyStudent,
   sendTeacherAudit,
-  sendTeacherError
+  sendTeacherError,
+  dispatchFullReportWithPdf
 } from '../services/telegram.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -165,6 +166,67 @@ router.post('/evaluate', async (req, res) => {
     res.status(500).json({
       success: false,
       error: err.message || 'Evaluation failed.'
+    });
+  }
+});
+
+/**
+ * POST /api/send-telegram-report
+ * Accepts generated PDF document and metadata, forwards to Telegram Teacher Group & Student.
+ */
+router.post('/send-telegram-report', upload.single('pdf'), async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, error: 'PDF file is required.' });
+    }
+
+    let studentInfo = {};
+    if (req.body.student) {
+      try {
+        studentInfo = typeof req.body.student === 'string' ? JSON.parse(req.body.student) : req.body.student;
+      } catch (e) {
+        studentInfo = {};
+      }
+    } else {
+      studentInfo = {
+        name: req.body.studentName || 'Student',
+        className: req.body.studentClass || '',
+        school: req.body.studentSchool || '',
+        telegram: req.body.telegramId || req.body.studentTelegram || ''
+      };
+    }
+
+    let evaluation = {};
+    if (req.body.evaluation) {
+      try {
+        evaluation = typeof req.body.evaluation === 'string' ? JSON.parse(req.body.evaluation) : req.body.evaluation;
+      } catch (e) {
+        evaluation = {};
+      }
+    }
+
+    const rawText = req.body.rawText || '';
+    const finalText = req.body.finalText || '';
+    const fileName = req.file.originalname || `EdumenAI_Report_${(studentInfo.name || 'student').replace(/\s+/g, '_')}.pdf`;
+
+    const dispatchResult = await dispatchFullReportWithPdf({
+      studentInfo,
+      evaluation,
+      rawText,
+      finalText,
+      pdfBuffer: req.file.buffer,
+      fileName
+    });
+
+    res.json({
+      success: true,
+      data: dispatchResult
+    });
+  } catch (err) {
+    console.error('[API /send-telegram-report] Error:', err);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to dispatch report to Telegram.'
     });
   }
 });

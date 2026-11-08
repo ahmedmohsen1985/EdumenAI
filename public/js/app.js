@@ -33,7 +33,8 @@
     activeTaskTab: 'image',
     activeAnswerTab: 'image',
     taskFile: null,
-    answerFile: null
+    answerFile: null,
+    lastGeneratedPdf: null
   };
 
   // --- DOM Elements ---
@@ -119,6 +120,10 @@
     contentFeedbackList: document.getElementById('contentFeedbackList'),
     correctedVersion: document.getElementById('correctedVersion'),
     printBtn: document.getElementById('printBtn'),
+    downloadPdfBtn: document.getElementById('downloadPdfBtn'),
+    telegramStatusBanner: document.getElementById('telegramStatusBanner'),
+    telegramStatusText: document.getElementById('telegramStatusText'),
+    telegramStatusTime: document.getElementById('telegramStatusTime'),
 
     // Loading
     loadingState: document.getElementById('loadingState'),
@@ -168,6 +173,9 @@
     elements.transcribeBtn.addEventListener('click', handleTranscribe);
     elements.submitBtn.addEventListener('click', handleSubmit);
     elements.printBtn.addEventListener('click', () => window.print());
+    if (elements.downloadPdfBtn) {
+      elements.downloadPdfBtn.addEventListener('click', downloadCurrentPdf);
+    }
     elements.studentText.addEventListener('input', () => {
       state.finalText = elements.studentText.value;
     });
@@ -579,6 +587,9 @@
       state.evaluation = result.data;
       renderReport(result.data);
       showAlert('Evaluation complete! Your report is ready below.', 'success');
+
+      // Generate PDF Report & Dispatch to Telegram
+      exportAndSendPdfReport(student, taskPrompt, result.data, finalText, state.rawText);
     } catch (err) {
       console.error('Evaluation error:', err);
       showAlert(err.message || 'Evaluation failed. Please try again.', 'error');
@@ -677,6 +688,404 @@
   function renderCorrectedVersion(html) {
     const sanitized = sanitizeCorrectedHtml(html);
     elements.correctedVersion.innerHTML = sanitized;
+  }
+
+  // --- PDF Generation & Telegram Dispatch ---
+  function pdfSafe(text) {
+    if (!text) return '';
+    const map = {
+      '\u2192': '->', '\u2190': '<-', '\u21D2': '=>', '\u2794': '->',
+      '\u2013': '-', '\u2014': '-', '\u2018': "'", '\u2019': "'",
+      '\u201C': '"', '\u201D': '"', '\u2026': '...', '\u00A0': ' ',
+      '\u2022': '-', '\u25B6': '', '\u25BC': '', '\u2713': 'v', '\u2717': 'x'
+    };
+    let v = String(text);
+    Object.keys(map).forEach((k) => {
+      v = v.split(k).join(map[k]);
+    });
+    return v.replace(/[^\x09\x0A\x0D\x20-\x7E\u00A1-\u00FF]/g, '');
+  }
+
+  function countWords(str) {
+    if (!str) return 0;
+    return str.trim().split(/\s+/).filter(Boolean).length;
+  }
+
+  function generateExercise4Pdf(studentInfo, taskPrompt, evaluation, finalText) {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      console.warn('[PDF] jsPDF library is not available.');
+      return null;
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margin = { left: 15, right: 15, top: 15, bottom: 15 };
+    const contentWidth = pageWidth - margin.left - margin.right; // 180 mm
+    const BOTTOM = pageHeight - margin.bottom - 10; // 272 mm
+
+    const colours = {
+      primary: [24, 34, 55],       // Brand Navy #182237
+      secondary: [181, 143, 83],   // Brand Gold #B58F53
+      cream: [248, 246, 241],      // Brand Cream #F8F6F1
+      dark: [33, 33, 33],
+      success: [27, 122, 61],
+      danger: [176, 58, 46],
+      gray: [120, 120, 120],
+      white: [255, 255, 255],
+      lightGreen: [232, 245, 233]
+    };
+
+    let y = margin.top;
+    let pageNumber = 1;
+
+    function addFooter(pageNum) {
+      doc.setFontSize(8);
+      doc.setTextColor(...colours.gray);
+      doc.setFont(undefined, 'normal');
+      doc.text('EdumenAI powered by EDUMENIA · Oxford AQA IGCSE ESL Exercise 4', margin.left, 290);
+      doc.text(`Page ${pageNum}`, pageWidth - margin.right, 290, { align: 'right' });
+    }
+
+    function checkPageBreak(neededHeight) {
+      if (y + (neededHeight || 0) > BOTTOM) {
+        addFooter(pageNumber);
+        doc.addPage();
+        pageNumber++;
+        y = margin.top + 5;
+        return true;
+      }
+      return false;
+    }
+
+    function addSectionHeader(title, colour = colours.primary) {
+      checkPageBreak(16);
+      doc.setFillColor(...colour);
+      doc.roundedRect(margin.left, y, contentWidth, 8, 1.5, 1.5, 'F');
+      doc.setTextColor(...colours.white);
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.text(pdfSafe(title), margin.left + 4, y + 5.5);
+      y += 12;
+      doc.setTextColor(...colours.dark);
+      doc.setFont(undefined, 'normal');
+    }
+
+    function addWrappedText(text, x, maxWidth, fontSize = 9, lineHeight = 4.5, isBold = false) {
+      doc.setFontSize(fontSize);
+      doc.setFont(undefined, isBold ? 'bold' : 'normal');
+      const safe = pdfSafe(text);
+      const lines = doc.splitTextToSize(safe, maxWidth);
+      lines.forEach((line) => {
+        checkPageBreak(lineHeight);
+        doc.text(line, x, y);
+        y += lineHeight;
+      });
+    }
+
+    // --- HEADER BANNER ---
+    doc.setFillColor(...colours.primary);
+    doc.rect(0, 0, pageWidth, 32, 'F');
+    doc.setFillColor(...colours.secondary);
+    doc.rect(0, 29, pageWidth, 3, 'F');
+
+    doc.setTextColor(...colours.white);
+    doc.setFontSize(15);
+    doc.setFont(undefined, 'bold');
+    doc.text('Exercise 4: Formal / Semi-Formal / Informal Writing', pageWidth / 2, 13, { align: 'center' });
+    doc.setFontSize(10.5);
+    doc.setFont(undefined, 'normal');
+    doc.text('Oxford AQA IGCSE ESL (9280) — Official AI Examiner Report', pageWidth / 2, 22, { align: 'center' });
+
+    y = 38;
+
+    // --- STUDENT INFO BAR ---
+    doc.setFillColor(...colours.cream);
+    doc.setDrawColor(...colours.secondary);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(margin.left, y, contentWidth, 12, 1.5, 1.5, 'FD');
+
+    const studentName = studentInfo.name || 'Student';
+    const studentClass = studentInfo.className || studentInfo.school || 'General';
+    const examDate = new Date().toLocaleDateString('en-GB');
+
+    doc.setTextColor(...colours.dark);
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    doc.text('Student:', margin.left + 4, y + 7.5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...colours.primary);
+    doc.text(pdfSafe(studentName), margin.left + 20, y + 7.5);
+
+    doc.setTextColor(...colours.dark);
+    doc.setFont(undefined, 'bold');
+    doc.text('Class/Group:', margin.left + 80, y + 7.5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...colours.primary);
+    doc.text(pdfSafe(studentClass), margin.left + 104, y + 7.5);
+
+    doc.setTextColor(...colours.dark);
+    doc.setFont(undefined, 'bold');
+    doc.text('Date:', margin.left + 145, y + 7.5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...colours.primary);
+    doc.text(examDate, margin.left + 156, y + 7.5);
+
+    y += 18;
+
+    // --- MARKS OVERVIEW BOXES ---
+    const boxW = (contentWidth - 8) / 3;
+    const marks = evaluation.marks || { total: 0, content: 0, language: 0 };
+
+    // Total
+    doc.setFillColor(...colours.primary);
+    doc.roundedRect(margin.left, y, boxW, 20, 2, 2, 'F');
+    doc.setTextColor(...colours.secondary);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.text('TOTAL MARK', margin.left + boxW / 2, y + 6, { align: 'center' });
+    doc.setTextColor(...colours.white);
+    doc.setFontSize(16);
+    doc.text(`${marks.total ?? 0} / 23`, margin.left + boxW / 2, y + 15, { align: 'center' });
+
+    // Content
+    doc.setFillColor(...colours.cream);
+    doc.setDrawColor(220, 220, 220);
+    doc.roundedRect(margin.left + boxW + 4, y, boxW, 20, 2, 2, 'FD');
+    doc.setTextColor(...colours.gray);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.text('CONTENT & COMM.', margin.left + boxW + 4 + boxW / 2, y + 6, { align: 'center' });
+    doc.setTextColor(...colours.primary);
+    doc.setFontSize(15);
+    doc.text(`${marks.content ?? 0} / 8`, margin.left + boxW + 4 + boxW / 2, y + 15, { align: 'center' });
+
+    // Language
+    doc.setFillColor(...colours.cream);
+    doc.roundedRect(margin.left + (boxW + 4) * 2, y, boxW, 20, 2, 2, 'FD');
+    doc.setTextColor(...colours.gray);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.text('LANGUAGE', margin.left + (boxW + 4) * 2 + boxW / 2, y + 6, { align: 'center' });
+    doc.setTextColor(...colours.primary);
+    doc.setFontSize(15);
+    doc.text(`${marks.language ?? 0} / 15`, margin.left + (boxW + 4) * 2 + boxW / 2, y + 15, { align: 'center' });
+
+    y += 26;
+
+    // --- TASK QUESTION ---
+    addSectionHeader('TASK QUESTION', colours.primary);
+    addWrappedText(taskPrompt || 'No task question prompt recorded.', margin.left + 2, contentWidth - 4, 8.5, 4.2);
+    y += 4;
+
+    // --- STUDENT SUBMITTED ARTICLE ---
+    addSectionHeader("STUDENT'S SUBMITTED ARTICLE", colours.primary);
+    const words = countWords(finalText);
+    addWrappedText(finalText || '', margin.left + 2, contentWidth - 4, 8.5, 4.2);
+    y += 2;
+
+    // Word count pill
+    checkPageBreak(8);
+    doc.setFillColor(...colours.cream);
+    doc.setDrawColor(...colours.secondary);
+    doc.roundedRect(margin.left + 2, y, 40, 5.5, 1.5, 1.5, 'FD');
+    doc.setTextColor(...colours.dark);
+    doc.setFontSize(7.5);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Word Count: ${words} words`, margin.left + 5, y + 3.8);
+    y += 10;
+
+    // --- EXAMINER VERDICT ---
+    addSectionHeader('EXAMINER VERDICT', colours.secondary);
+    const just = evaluation.justification || {};
+    if (just.content) {
+      addWrappedText(`Content: ${just.content}`, margin.left + 2, contentWidth - 4, 8.5, 4.2);
+      y += 1;
+    }
+    if (just.language) {
+      addWrappedText(`Language: ${just.language}`, margin.left + 2, contentWidth - 4, 8.5, 4.2);
+      y += 3;
+    }
+
+    // --- ERRORS DETECTED TABLE ---
+    const errors = Array.isArray(evaluation.errors) ? evaluation.errors : [];
+    addSectionHeader(`ERRORS IDENTIFIED (${errors.length})`, colours.primary);
+
+    if (errors.length === 0) {
+      checkPageBreak(8);
+      doc.setFillColor(...colours.lightGreen);
+      doc.roundedRect(margin.left, y, contentWidth, 7, 1.5, 1.5, 'F');
+      doc.setTextColor(...colours.success);
+      doc.setFontSize(8.5);
+      doc.setFont(undefined, 'bold');
+      doc.text('No significant errors flagged. Excellent control!', margin.left + 5, y + 4.8);
+      y += 11;
+    } else {
+      const colWidths = [38, 48, 28, 66]; // Total = 180 mm
+      checkPageBreak(8);
+      doc.setFillColor(235, 238, 243);
+      doc.rect(margin.left, y, contentWidth, 6, 'F');
+      doc.setTextColor(...colours.dark);
+      doc.setFontSize(7.5);
+      doc.setFont(undefined, 'bold');
+      doc.text('Original', margin.left + 2, y + 4.2);
+      doc.text('Correction', margin.left + colWidths[0] + 2, y + 4.2);
+      doc.text('Type', margin.left + colWidths[0] + colWidths[1] + 2, y + 4.2);
+      doc.text('Explanation', margin.left + colWidths[0] + colWidths[1] + colWidths[2] + 2, y + 4.2);
+      y += 6.5;
+
+      errors.forEach((errItem, idx) => {
+        const orig = pdfSafe(errItem.original || '');
+        const corr = pdfSafe(errItem.correction || '');
+        const cat = pdfSafe(errItem.category || 'Error');
+        const expl = pdfSafe(errItem.explanation || '');
+
+        doc.setFontSize(7.5);
+        const explLines = doc.splitTextToSize(expl, colWidths[3] - 4);
+        const origLines = doc.splitTextToSize(orig, colWidths[0] - 4);
+        const corrLines = doc.splitTextToSize(corr, colWidths[1] - 4);
+        const rowLines = Math.max(explLines.length, origLines.length, corrLines.length, 1);
+        const rowHeight = Math.max(rowLines * 3.8 + 2.5, 6.5);
+
+        checkPageBreak(rowHeight);
+
+        if (idx % 2 === 1) {
+          doc.setFillColor(250, 250, 250);
+          doc.rect(margin.left, y - 0.5, contentWidth, rowHeight, 'F');
+        }
+
+        doc.setTextColor(...colours.danger);
+        doc.setFont(undefined, 'normal');
+        origLines.forEach((l, li) => doc.text(l, margin.left + 2, y + 3.5 + li * 3.8));
+
+        doc.setTextColor(...colours.success);
+        doc.setFont(undefined, 'bold');
+        corrLines.forEach((l, li) => doc.text(l, margin.left + colWidths[0] + 2, y + 3.5 + li * 3.8));
+
+        doc.setTextColor(...colours.primary);
+        doc.setFont(undefined, 'normal');
+        doc.text(cat, margin.left + colWidths[0] + colWidths[1] + 2, y + 3.5);
+
+        doc.setTextColor(...colours.dark);
+        explLines.forEach((l, li) => doc.text(l, margin.left + colWidths[0] + colWidths[1] + colWidths[2] + 2, y + 3.5 + li * 3.8));
+
+        doc.setDrawColor(230, 230, 230);
+        doc.setLineWidth(0.2);
+        doc.line(margin.left, y + rowHeight - 0.5, margin.left + contentWidth, y + rowHeight - 0.5);
+
+        y += rowHeight;
+      });
+      y += 4;
+    }
+
+    // --- CONTENT FEEDBACK ---
+    const feedback = Array.isArray(evaluation.content_feedback) ? evaluation.content_feedback : [];
+    if (feedback.length > 0) {
+      addSectionHeader('CONTENT & EXPANSION FEEDBACK', colours.success);
+      feedback.forEach((pt) => {
+        checkPageBreak(6);
+        doc.setTextColor(...colours.success);
+        doc.setFontSize(8.5);
+        doc.setFont(undefined, 'bold');
+        doc.text('•', margin.left + 2, y + 4);
+        doc.setTextColor(...colours.dark);
+        doc.setFont(undefined, 'normal');
+        addWrappedText(pt, margin.left + 6, contentWidth - 8, 8.5, 4.2);
+        y += 1.5;
+      });
+      y += 3;
+    }
+
+    // --- CORRECTED VERSION ---
+    const correctedHtml = evaluation.corrected_version || '';
+    if (correctedHtml) {
+      addSectionHeader('CORRECTED VERSION', colours.primary);
+      const plainCorrected = correctedHtml.replace(/<[^>]*>/g, '');
+      addWrappedText(plainCorrected, margin.left + 2, contentWidth - 4, 8.5, 4.5);
+      y += 4;
+    }
+
+    addFooter(pageNumber);
+
+    return doc;
+  }
+
+  function downloadCurrentPdf() {
+    if (state.lastGeneratedPdf && state.lastGeneratedPdf.doc) {
+      state.lastGeneratedPdf.doc.save(state.lastGeneratedPdf.fileName);
+    } else {
+      showAlert('PDF report is ready to download.', 'success');
+    }
+  }
+
+  async function exportAndSendPdfReport(studentInfo, taskPrompt, evaluation, finalText, rawText) {
+    try {
+      const doc = generateExercise4Pdf(studentInfo, taskPrompt, evaluation, finalText);
+      if (!doc) return;
+
+      const safeName = (studentInfo.name || 'student').replace(/\s+/g, '_');
+      const fileName = `EdumenAI_Report_${safeName}.pdf`;
+      const pdfBlob = doc.output('blob');
+
+      state.lastGeneratedPdf = { doc, blob: pdfBlob, fileName };
+
+      // Dispatch to Telegram via backend relay
+      const formData = new FormData();
+      formData.append('pdf', pdfBlob, fileName);
+      formData.append('student', JSON.stringify(studentInfo));
+      formData.append('evaluation', JSON.stringify(evaluation));
+      formData.append('rawText', rawText || '');
+      formData.append('finalText', finalText || '');
+      formData.append('fileName', fileName);
+
+      const res = await fetch('/api/send-telegram-report', {
+        method: 'POST',
+        body: formData
+      });
+
+      const resData = await res.json();
+
+      if (res.ok && resData.success) {
+        const studentResult = resData.data?.student;
+        const teacherResult = resData.data?.teacherGroup;
+
+        if (studentResult && studentResult.ok) {
+          updateTelegramStatusBanner('success', `PDF Report successfully sent to your Telegram account!`);
+        } else if (teacherResult && teacherResult.ok) {
+          updateTelegramStatusBanner('info', `Report archived & delivered to Teacher Telegram Group.`);
+        } else {
+          updateTelegramStatusBanner('neutral', `Report ready. Click "Download PDF Report" to save your copy.`);
+        }
+      }
+    } catch (err) {
+      console.warn('[PDF/Telegram] Automatic delivery note:', err);
+    }
+  }
+
+  function updateTelegramStatusBanner(type, message) {
+    if (!elements.telegramStatusBanner || !elements.telegramStatusText) return;
+
+    elements.telegramStatusBanner.className = 'mb-4 p-4 rounded-xl border flex items-center justify-between gap-3 text-sm transition';
+
+    if (type === 'success') {
+      elements.telegramStatusBanner.classList.add('bg-emerald-50', 'border-emerald-200', 'text-emerald-800');
+    } else if (type === 'info') {
+      elements.telegramStatusBanner.classList.add('bg-blue-50', 'border-blue-200', 'text-blue-800');
+    } else {
+      elements.telegramStatusBanner.classList.add('bg-brand-cream/60', 'border-brand-gold/40', 'text-gray-700');
+    }
+
+    elements.telegramStatusText.textContent = message;
+    if (elements.telegramStatusTime) {
+      elements.telegramStatusTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    elements.telegramStatusBanner.classList.remove('hidden');
   }
 
   // --- Helpers ---

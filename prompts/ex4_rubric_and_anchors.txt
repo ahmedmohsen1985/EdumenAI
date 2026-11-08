@@ -1,0 +1,124 @@
+# EXERCISE 4 RUBRIC, TONES, TYPES AND STANDARDISATION ANCHORS
+# Oxford AQA IGCSE ESL Exercise 4: Article Writing (23 marks)
+
+## Mark Allocation
+- **Content & Communication**: 8 marks
+- **Language**: 15 marks
+- **Total**: 23 marks
+
+---
+
+## CONTENT & COMMUNICATION (8 marks)
+
+Award marks holistically based on how well the article:
+- addresses the task and audience;
+- develops ideas with relevant detail and examples;
+- organises information clearly;
+- uses an appropriate and consistent tone.
+
+### Content & Communication Levels
+- **7-8 marks**: Relevant, well-developed ideas; clear sense of audience; engaging and coherent throughout.
+- **5-6 marks**: Relevant ideas with some development; generally clear organisation; mostly appropriate tone.
+- **3-4 marks**: Some relevant ideas but limited development; organisation may be uneven; tone not always appropriate.
+- **1-2 marks**: Few relevant ideas; little development or organisation; tone often inappropriate.
+- **0 marks**: No relevant content or completely off-task.
+
+---
+
+## LANGUAGE (15 marks)
+
+### Level 5: 13-15 marks
+- Accurate and varied sentence structures.
+- Wide range of vocabulary used precisely.
+- Errors are rare and do not affect communication.
+- Effective use of paragraphs and linking words.
+
+### Level 4: 10-12 marks
+- Generally accurate sentence structures with some variety.
+- Adequate range of vocabulary, mostly used appropriately.
+- Errors are minor and rarely impede understanding.
+- Paragraphing and linking are mostly effective.
+
+### Level 3: 7-9 marks
+- Simple and some complex sentence structures; some errors.
+- Vocabulary is adequate but may be repetitive or imprecise.
+- Errors sometimes affect meaning.
+- Some attempt at paragraphing and linking.
+
+### Level 2: 4-6 marks
+- Mainly simple sentences; frequent errors.
+- Limited vocabulary; some words used incorrectly.
+- Errors often affect meaning or clarity.
+- Little evidence of paragraphing or linking.
+
+### Level 1: 1-3 marks
+- Very simple or broken sentences; many errors.
+- Very limited vocabulary; meaning frequently unclear.
+- Communication is seriously impaired.
+
+### Level 0: 0 marks
+- No awardable language.
+
+---
+
+## ARTICLE TONES
+
+1. **Formal**: Third-person, objective, no contractions, suitable for school magazines or official publications.
+2. **Semi-formal**: Directly addresses the reader using "you", friendly but polite, suitable for general magazine articles.
+3. **Informal**: Personal experience, first-person, conversational, suitable for blogs or teen magazines.
+
+The tone must match the task. Penalise inconsistent tone only if it damages communication or audience awareness.
+
+---
+
+## ARTICLE TYPES
+
+1. **Discursive**: Presents different sides of an issue; balanced; ends with a clear conclusion.
+2. **Argumentative**: Takes a clear position and supports it with reasons and evidence.
+3. **Persuasive**: Aims to convince the reader; uses engaging openings, rhetorical questions, and direct address.
+
+---
+
+## PILAR FRAMEWORK FOR ARTICLE WRITING
+
+Each strong article should show evidence of:
+- **P**urpose: Why is the article being written? Clear from the start.
+- **I**nterest: Does the opening hook the reader?
+- **L**inkage: Are ideas connected with appropriate linking words?
+- **A**udience: Is the reader directly or indirectly addressed?
+- **R**ange: Is there variety in vocabulary and sentence structure?
+
+Use PILAR to guide content feedback, not to calculate marks mechanically.
+
+---
+
+## STANDARDISATION ANCHORS (Exercise 4)
+
+### Q4-A: Excellent Formal Article (Content 8, Language 14)
+Engaging third-person opening; clear purpose; well-developed paragraphs with examples; accurate, varied language; strong conclusion.
+
+### Q4-B: Good Semi-Formal Article (Content 6, Language 11)
+Friendly address to reader; relevant ideas with some development; mostly accurate with minor slips; clear structure.
+
+### Q4-C: Adequate Discursive Article (Content 5, Language 8)
+Both sides of issue mentioned; some examples; simple and some complex sentences; vocabulary adequate but repetitive.
+
+### Q4-D: Limited Persuasive Article (Content 4, Language 6)
+Attempts to persuade but ideas under-developed; frequent errors; basic linking; tone inconsistent.
+
+### Q4-E: Weak Argumentative Article (Content 3, Language 4)
+Position stated but not supported; simple sentences; many errors; organisation weak.
+
+### Q4-F: Very Weak Response (Content 2, Language 2)
+Few relevant ideas; serious language errors; communication often unclear.
+
+### Q4-G: Minimal Response (Content 1, Language 1)
+One or two relevant phrases; almost no control of language.
+
+### Q4-H: Off-Task or Blank (Content 0, Language 0)
+No awardable content.
+
+---
+
+## FINAL INSTRUCTION
+Apply the rubric above using best-fit judgement. Return marks, justifications, errors, content feedback, and a corrected version in the required JSON schema.

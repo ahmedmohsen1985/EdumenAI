@@ -1,0 +1,85 @@
+/* Custom highlight styles for corrected version */
+
+mark.correction {
+  background-color: #FEF08A; /* yellow-200 */
+  color: #1F2937; /* gray-800 */
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+mark.addition {
+  background-color: #BFDBFE; /* blue-200 */
+  color: #1F2937; /* gray-800 */
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.bg-correction {
+  background-color: #FEF08A;
+}
+
+.bg-addition {
+  background-color: #BFDBFE;
+}
+
+/* Print styles */
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+
+  body {
+    background-color: white;
+    color: black;
+  }
+
+  /* Hide site chrome and input sections */
+  header,
+  footer,
+  .print\:hidden,
+  #alertContainer,
+  #loadingState,
+  #dropZone,
+  #imagePreview,
+  #transcribeBtn,
+  #submitBtn,
+  #studentName,
+  #studentTelegram,
+  #studentSchool,
+  #studentClass,
+  #taskPrompt,
+  #studentText,
+  #identitySection,
+  #taskSection,
+  #workspaceSection {
+    display: none !important;
+  }
+
+  main {
+    max-width: 100%;
+    padding: 0;
+  }
+
+  section {
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb;
+    break-inside: avoid;
+    margin-bottom: 1rem;
+    padding: 1rem;
+  }
+
+  #reportSection {
+    display: block !important;
+  }
+
+  #printHeader {
+    display: block !important;
+    margin-bottom: 1.5rem;
+  }
+
+  mark.correction,
+  mark.addition {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

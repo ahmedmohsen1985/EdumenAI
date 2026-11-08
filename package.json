@@ -1,0 +1,32 @@
+{
+  "name": "edumenai-exercise4",
+  "version": "1.0.0",
+  "description": "AI Marking Agent for Oxford AQA IGCSE ESL Exercise 4 (Article Writing)",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "keywords": [
+    "education",
+    "ai",
+    "marking",
+    "oxford-aqa",
+    "esl",
+    "article-writing"
+  ],
+  "author": "EdumenAI / EDUMENIA",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@google/genai": "^2.32.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^2.5.0",
+    "node-fetch": "^3.3.2"
+  }
+}

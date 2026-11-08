@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  edumenai-app:
+    build: .
+    container_name: edumenai-exercise4
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_TEACHER_GROUP_ID=${TELEGRAM_TEACHER_GROUP_ID}
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-86400}
+    volumes:
+      - ./uploads:/app/uploads

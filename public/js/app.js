@@ -7,13 +7,6 @@
   'use strict';
 
   // --- Constants ---
-  const DEFAULT_TASK_PROMPT = `You see this announcement in your school magazine.
-
-Articles wanted: Social media in modern life
-Have we become too dependent on social media? Write an article giving your views.
-
-Write your article in about 100–150 words.`;
-
   const OFFICIAL_SCHOOLS = [
     'Capital',
     'Capital Lotus',
@@ -56,6 +49,7 @@ Write your article in about 100–150 words.`;
     studentSchool: document.getElementById('studentSchool'),
 
     // Task
+    taskDisplayBox: document.getElementById('taskDisplayBox'),
     taskDisplay: document.getElementById('taskDisplay'),
     taskPrompt: document.getElementById('taskPrompt'),
     taskPromptEdit: document.getElementById('taskPromptEdit'),
@@ -128,15 +122,9 @@ Write your article in about 100–150 words.`;
 
   // --- Initialization ---
   document.addEventListener('DOMContentLoaded', () => {
-    initTaskPrompt();
     populateIdentityFromUrl();
     bindEvents();
   });
-
-  function initTaskPrompt() {
-    elements.taskPrompt.value = DEFAULT_TASK_PROMPT;
-    elements.taskDisplay.textContent = DEFAULT_TASK_PROMPT;
-  }
 
   function bindEvents() {
     // Identity
@@ -228,6 +216,7 @@ Write your article in about 100–150 words.`;
       const decodedPrompt = decodeURIComponent(prompt);
       elements.taskPrompt.value = decodedPrompt;
       elements.taskDisplay.textContent = decodedPrompt;
+      if (elements.taskDisplayBox) elements.taskDisplayBox.classList.remove('hidden');
       state.taskPromptEdited = true;
     }
 
@@ -297,6 +286,7 @@ Write your article in about 100–150 words.`;
     }
     elements.taskPrompt.value = value;
     elements.taskDisplay.textContent = value;
+    if (elements.taskDisplayBox) elements.taskDisplayBox.classList.remove('hidden');
     state.taskPromptEdited = true;
     hideTaskEdit();
   }
@@ -379,6 +369,9 @@ Write your article in about 100–150 words.`;
     elements.taskImageInput.value = '';
     elements.taskPdfInput.value = '';
     elements.taskFileThumb.innerHTML = 'FILE';
+    elements.taskPrompt.value = '';
+    elements.taskDisplay.textContent = '';
+    if (elements.taskDisplayBox) elements.taskDisplayBox.classList.add('hidden');
   }
 
   async function extractTaskText(file) {
@@ -403,6 +396,7 @@ Write your article in about 100–150 words.`;
       if (extracted.trim()) {
         elements.taskPrompt.value = extracted.trim();
         elements.taskDisplay.textContent = extracted.trim();
+        if (elements.taskDisplayBox) elements.taskDisplayBox.classList.remove('hidden');
         state.taskPromptEdited = true;
         showAlert('Task question extracted from uploaded sheet.', 'success');
       } else {
@@ -510,7 +504,9 @@ Write your article in about 100–150 words.`;
     }
 
     if (!taskPrompt) {
-      showAlert('Task question is missing. Please enter or upload it.', 'error');
+      showAlert('Please upload or extract your task question in Step 1 first.', 'error');
+      const taskSec = document.getElementById('taskSection');
+      if (taskSec) taskSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
 

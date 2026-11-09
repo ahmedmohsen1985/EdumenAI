@@ -194,7 +194,7 @@ export const MarkingResponseSchema = {
     },
     corrected_version: {
       type: Type.STRING,
-      description: "Complete polished student text with <mark class='correction'>corrected word</mark> tags on every spelling, grammar, punctuation, or capitalisation fix on the entire word. Never tag single letters. Do not use addition or other tags."
+      description: "Full, complete polished student text covering 100% of the student draft from the first word to the very last word without cutting off. Highlight corrections with <mark class='correction'>word</mark> tags on the entire corrected word. Never tag single letters. Do not use addition or other tags."
     }
   },
   required: ['marks', 'justification', 'errors', 'content_feedback', 'corrected_version']
@@ -340,6 +340,9 @@ ${taskPrompt}
 
 STUDENT SUBMITTED DRAFT:
 ${studentText}
+
+CRITICAL REQUIREMENT FOR 'corrected_version':
+Rewrite and polish the student's submission from start to finish. You MUST NOT cut off, shorten, or stop early. Every single paragraph and sentence down to the closing line must be included in 'corrected_version'.
 `;
 
   const coreRules = readPromptFile(CORE_PROMPT_PATH);
@@ -351,6 +354,7 @@ ${studentText}
       responseMimeType: 'application/json',
       responseSchema: MarkingResponseSchema,
       temperature: 0.0,
+      maxOutputTokens: 8192,
       systemInstruction: fullSystemInstruction
     };
 

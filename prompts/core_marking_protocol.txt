@@ -51,4 +51,13 @@ When diagnosing errors, use ONLY these categories:
 ## 8. Output Discipline
 - Always return marks in the required JSON schema.
 - Keep justifications concise and decisive.
-- Provide a corrected version with inline HTML <mark> tags as specified.
+- Provide a corrected version with inline HTML <mark class="correction"> tags as specified in Section 9.
+
+## 9. Corrected Version Tagging Rules (Single Unified Correction Tag)
+- The `corrected_version` must be the complete, natural, and polished English text of the student's submission.
+- Use ONLY one HTML tag: `<mark class="correction">corrected word or phrase</mark>`.
+- Highlight every correction (spelling slips, grammar fixes, word choices, punctuation, and capitalisation).
+- CRITICAL WORD-LEVEL RULE: ALWAYS wrap the ENTIRE corrected word or phrase, NEVER a single letter!
+  * CORRECT: `<mark class="correction">Maybe</mark>`, `<mark class="correction">North Korea</mark>`, `<mark class="correction">human rights</mark>`
+  * STRICTLY FORBIDDEN: `<mark class="correction">M</mark>aybe` or `<mark class="addition">M</mark>aybe` (Never tag isolated characters).
+- Do NOT use `<mark class="addition">` or any blue tags. All corrections and improvements share the single, clean `<mark class="correction">` tag.

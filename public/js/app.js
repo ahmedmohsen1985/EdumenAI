@@ -1208,8 +1208,13 @@
   function sanitizeCorrectedHtml(html) {
     if (typeof html !== 'string') return '';
 
+    // 1. Pre-process: merge isolated character tags into complete words (e.g. <mark>M</mark>aybe -> <mark>Maybe</mark>)
+    let normalized = html
+      .replace(/<mark[^>]*>([A-Za-z])<\/mark>([A-Za-z0-9_]+)/g, '<mark class="correction">$1$2</mark>')
+      .replace(/([A-Za-z0-9_]+)<mark[^>]*>([A-Za-z0-9_]+)<\/mark>/g, '<mark class="correction">$1$2</mark>');
+
     const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+    const doc = parser.parseFromString(normalized, 'text/html');
     const fragment = document.createDocumentFragment();
 
     function copyNode(node, parent) {
@@ -1222,14 +1227,12 @@
         const tag = node.tagName.toLowerCase();
 
         if (tag === 'mark') {
-          const cls = node.getAttribute('class');
-          if (cls === 'correction' || cls === 'addition') {
-            const newMark = document.createElement('mark');
-            newMark.className = cls;
-            Array.from(node.childNodes).forEach((child) => copyNode(child, newMark));
-            parent.appendChild(newMark);
-            return;
-          }
+          // Unify all marks to a single clean 'correction' style
+          const newMark = document.createElement('mark');
+          newMark.className = 'correction';
+          Array.from(node.childNodes).forEach((child) => copyNode(child, newMark));
+          parent.appendChild(newMark);
+          return;
         }
 
         const wrapper = document.createElement(tag === 'div' || tag === 'p' ? 'p' : 'span');

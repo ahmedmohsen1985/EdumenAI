@@ -194,7 +194,7 @@ export const MarkingResponseSchema = {
     },
     corrected_version: {
       type: Type.STRING,
-      description: "Complete student text with <mark class='correction'>yellow</mark> and <mark class='addition'>blue</mark> HTML tags"
+      description: "Complete polished student text with <mark class='correction'>corrected word</mark> tags on every spelling, grammar, punctuation, or capitalisation fix on the entire word. Never tag single letters. Do not use addition or other tags."
     }
   },
   required: ['marks', 'justification', 'errors', 'content_feedback', 'corrected_version']
@@ -367,7 +367,12 @@ ${studentText}
     parsed.marks = normalizeMarks(parsed.marks || {});
     parsed.errors = Array.isArray(parsed.errors) ? parsed.errors : [];
     parsed.content_feedback = Array.isArray(parsed.content_feedback) ? parsed.content_feedback : [];
-    parsed.corrected_version = String(parsed.corrected_version || studentText);
+    
+    let corrected = String(parsed.corrected_version || studentText);
+    corrected = corrected.replace(/<mark class=["']addition["']>/gi, '<mark class="correction">');
+    corrected = corrected.replace(/<mark[^>]*>([A-Za-z])<\/mark>([A-Za-z0-9_]+)/g, '<mark class="correction">$1$2</mark>');
+    corrected = corrected.replace(/([A-Za-z0-9_]+)<mark[^>]*>([A-Za-z0-9_]+)<\/mark>/g, '<mark class="correction">$1$2</mark>');
+    parsed.corrected_version = corrected;
 
     return parsed;
   });

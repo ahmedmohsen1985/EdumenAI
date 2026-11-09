@@ -88,6 +88,9 @@
     answerDropZonePdf: document.getElementById('answerDropZonePdf'),
     answerImagePreview: document.getElementById('answerImagePreview'),
     answerPreviewImg: document.getElementById('answerPreviewImg'),
+    answerImageName: document.getElementById('answerImageName'),
+    answerImageSize: document.getElementById('answerImageSize'),
+    removeAnswerImageBtn: document.getElementById('removeAnswerImageBtn'),
     answerPdfPreview: document.getElementById('answerPdfPreview'),
     answerPdfName: document.getElementById('answerPdfName'),
     answerPdfSize: document.getElementById('answerPdfSize'),
@@ -95,6 +98,7 @@
 
     // Workspace
     workspaceSection: document.getElementById('workspaceSection'),
+    transcribeArea: document.getElementById('transcribeArea'),
     transcribeBtn: document.getElementById('transcribeBtn'),
     transcribeLoading: document.getElementById('transcribeLoading'),
     studentText: document.getElementById('studentText'),
@@ -167,7 +171,12 @@
     // Answer upload
     bindDropZone(elements.answerDropZoneImage, elements.answerImageInput, handleAnswerFileSelect);
     bindDropZone(elements.answerDropZonePdf, elements.answerPdfInput, handleAnswerFileSelect);
-    elements.removeAnswerPdfBtn.addEventListener('click', removeAnswerFile);
+    if (elements.removeAnswerImageBtn) {
+      elements.removeAnswerImageBtn.addEventListener('click', removeAnswerFile);
+    }
+    if (elements.removeAnswerPdfBtn) {
+      elements.removeAnswerPdfBtn.addEventListener('click', removeAnswerFile);
+    }
 
     // Actions
     elements.transcribeBtn.addEventListener('click', handleTranscribe);
@@ -363,6 +372,10 @@
 
     state.taskFile = file;
 
+    // Hide dropzone once file is selected
+    if (elements.taskDropZoneImage) elements.taskDropZoneImage.classList.add('hidden');
+    if (elements.taskDropZonePdf) elements.taskDropZonePdf.classList.add('hidden');
+
     // Show preview
     elements.taskFileName.textContent = file.name;
     elements.taskFileSize.textContent = formatFileSize(file.size);
@@ -391,6 +404,8 @@
     elements.taskFileThumb.innerHTML = 'FILE';
     elements.taskFilePreview.classList.add('hidden');
     elements.taskDisplayBox.classList.add('hidden');
+    if (elements.taskDropZoneImage) elements.taskDropZoneImage.classList.remove('hidden');
+    if (elements.taskDropZonePdf) elements.taskDropZonePdf.classList.remove('hidden');
     if (elements.taskUploadArea) elements.taskUploadArea.classList.remove('hidden');
     if (elements.workspaceSection) elements.workspaceSection.classList.add('hidden');
   }
@@ -457,10 +472,21 @@
 
     state.answerFile = file;
 
+    // Reset any previous transcription
+    elements.studentText.value = '';
+    state.rawText = '';
+    state.finalText = '';
+    const badge = document.getElementById('transcriptionBadge');
+    if (badge) badge.classList.add('hidden');
+    if (elements.transcribeArea) elements.transcribeArea.classList.remove('hidden');
+
     if (state.activeAnswerTab === 'image' && file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = (e) => {
         elements.answerPreviewImg.src = e.target.result;
+        if (elements.answerImageName) elements.answerImageName.textContent = file.name;
+        if (elements.answerImageSize) elements.answerImageSize.textContent = formatFileSize(file.size);
+        elements.answerDropZoneImage.classList.add('hidden');
         elements.answerImagePreview.classList.remove('hidden');
       };
       reader.readAsDataURL(file);
@@ -468,6 +494,7 @@
     } else {
       elements.answerPdfName.textContent = file.name;
       elements.answerPdfSize.textContent = formatFileSize(file.size);
+      elements.answerDropZonePdf.classList.add('hidden');
       elements.answerPdfPreview.classList.remove('hidden');
       elements.answerImagePreview.classList.add('hidden');
     }
@@ -477,14 +504,23 @@
     state.answerFile = null;
     elements.answerImageInput.value = '';
     elements.answerPdfInput.value = '';
+
+    // Show dropzones back
+    elements.answerDropZoneImage.classList.remove('hidden');
+    elements.answerDropZonePdf.classList.remove('hidden');
+
+    // Hide previews
     elements.answerImagePreview.classList.add('hidden');
     elements.answerPdfPreview.classList.add('hidden');
     elements.answerPreviewImg.src = '';
+
+    // Reset transcription state
     elements.studentText.value = '';
     state.rawText = '';
     state.finalText = '';
     const badge = document.getElementById('transcriptionBadge');
     if (badge) badge.classList.add('hidden');
+    if (elements.transcribeArea) elements.transcribeArea.classList.remove('hidden');
   }
 
   // --- Transcription ---
@@ -518,6 +554,9 @@
       state.finalText = transcription;
       elements.studentText.value = transcription;
       elements.studentText.readOnly = true;
+
+      // Hide transcribe button once transcription is complete and locked
+      if (elements.transcribeArea) elements.transcribeArea.classList.add('hidden');
 
       const badge = document.getElementById('transcriptionBadge');
       if (badge) badge.classList.remove('hidden');

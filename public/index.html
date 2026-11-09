@@ -196,7 +196,7 @@
           <span class="w-7 h-7 rounded-full bg-brand-navy/10 text-brand-navy flex items-center justify-center text-sm font-bold">2</span>
           Submit Your Article
         </h2>
-        <p class="text-sm text-gray-500 mb-4">Upload your handwritten article (Image or PDF) or type it directly below.</p>
+        <p class="text-sm text-gray-500 mb-4">Upload your handwritten article (Image or PDF) to transcribe and grade your work.</p>
 
         <!-- Answer Upload Tabs -->
         <div class="flex border-b border-gray-200 mb-4">
@@ -255,14 +255,25 @@
           <p class="text-xs text-gray-500 mt-1">Preserving exact student spelling, misspellings, and crossed-out corrections.</p>
         </div>
 
-        <!-- Editable Transcription -->
+        <!-- Verbatim Transcription (Locked for Exam Integrity) -->
         <div class="mb-2">
-          <label for="studentText" class="block text-sm font-medium text-gray-700 mb-1">
-            Verbatim Transcription <span class="text-xs text-gray-500 font-normal">— check and edit before marking</span>
-          </label>
-          <textarea id="studentText" rows="10" placeholder="Your transcription will appear here. You can also type or paste your article directly." class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition resize-y"></textarea>
+          <div class="flex items-center justify-between mb-1.5">
+            <label for="studentText" class="text-sm font-semibold text-brand-navy flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+              <span>Verbatim Transcription</span>
+              <span class="text-xs font-normal text-gray-500">(Locked for Exam Integrity)</span>
+            </label>
+            <span id="transcriptionBadge" class="hidden text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Extracted from Handwriting
+            </span>
+          </div>
+          <textarea id="studentText" rows="10" readonly spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Your handwriting transcription will appear here automatically once you upload and click 'Transcribe Handwriting'..." class="w-full px-4 py-3 rounded-lg border border-gray-300 bg-gray-50/70 text-gray-800 font-normal outline-none transition resize-y select-text focus:ring-0 cursor-default"></textarea>
         </div>
-        <p class="text-xs text-gray-500 mb-4">Tip: Make sure the text matches your handwriting. Edits are logged for teacher audit.</p>
+        <p class="text-xs text-gray-500 mb-4 flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          Directly extracted character-by-character from your handwriting. Editing is locked to preserve authentic Oxford AQA exam scoring.
+        </p>
 
         <!-- Evaluation Contextual Loader -->
         <div id="evalLoading" class="hidden my-4 p-5 bg-brand-navy text-white rounded-xl text-center shadow-md">

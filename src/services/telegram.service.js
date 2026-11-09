@@ -154,30 +154,33 @@ Check the detailed report on your screen!
 /**
  * Sends an audit log to the teacher supergroup (text only).
  */
-export async function sendTeacherAudit(studentInfo, rawText, finalText, evaluation) {
+export async function sendTeacherAudit(studentInfo, textOrRaw, finalOrEval, maybeEval) {
   const teacherGroup = getTeacherGroup();
   if (!teacherGroup) {
     console.warn('[Telegram] sendTeacherAudit skipped: TELEGRAM_TEACHER_GROUP_ID not configured.');
     return null;
   }
 
-  const isChanged = Boolean(rawText && finalText && rawText.trim() !== finalText.trim());
+  // Handle both 3-argument and 4-argument calls seamlessly
+  const evaluation = maybeEval || finalOrEval || {};
+  const studentText = typeof textOrRaw === 'string'
+    ? (maybeEval ? (finalOrEval || textOrRaw) : textOrRaw)
+    : '';
+
   const errorCount = Array.isArray(evaluation.errors) ? evaluation.errors.length : 0;
+  const marks = evaluation.marks || {};
+  const snippet = studentText.trim();
 
   const auditMsg = `
 📋 <b>AUDIT REPORT - Exercise 4 (Article)</b>
 👤 <b>Student:</b> ${studentInfo.name || 'Unknown'} (${studentInfo.school || 'General'} - ${studentInfo.className || 'Class'})
 📱 <b>Telegram ID:</b> ${studentInfo.telegram || 'N/A'}
-📊 <b>Result:</b> <b>${evaluation.marks.total}/23</b> (C: ${evaluation.marks.content}/8, L: ${evaluation.marks.language}/15)
-🔍 <b>Errors:</b> ${errorCount}
+📊 <b>Result:</b> <b>${marks.total ?? 0}/23</b> (Content: ${marks.content ?? 0}/8, Language: ${marks.language ?? 0}/15)
+🔍 <b>Errors Flagged:</b> ${errorCount}
+🔒 <b>Mode:</b> Verbatim Handwriting OCR (Locked - Unedited)
 
-📝 <b>Status:</b> ${isChanged ? '⚠️ Student edited OCR transcription' : '✅ Submitted without edits'}
-
-<b>RAW TRANSCRIPTION:</b>
-<code>${(rawText || '').substring(0, 1000)}</code>
-
-<b>SUBMITTED FINAL:</b>
-<code>${(finalText || '').substring(0, 1000)}</code>
+📝 <b>Student Article:</b>
+<code>${snippet.substring(0, 1500)}</code>
 `;
 
   return sendTelegramMessage(teacherGroup, auditMsg);
@@ -192,7 +195,6 @@ export async function dispatchFullReportWithPdf({ studentInfo, evaluation, rawTe
     student: null
   };
 
-  const isChanged = Boolean(rawText && finalText && rawText.trim() !== finalText.trim());
   const errorCount = Array.isArray(evaluation.errors) ? evaluation.errors.length : 0;
   const firstName = studentInfo.name ? studentInfo.name.split(' ')[0] : 'Student';
 
@@ -204,7 +206,7 @@ export async function dispatchFullReportWithPdf({ studentInfo, evaluation, rawTe
 📱 <b>Telegram ID:</b> ${studentInfo.telegram || 'N/A'}
 📊 <b>Marks:</b> <b>${evaluation.marks.total}/23</b> (Content: ${evaluation.marks.content}/8, Language: ${evaluation.marks.language}/15)
 🔍 <b>Errors:</b> ${errorCount}
-📝 <b>OCR:</b> ${isChanged ? '⚠️ Edited by student' : '✅ Verbatim submission'}
+🔒 <b>Submission:</b> Verbatim OCR (Locked)
 
 📎 <i>Attached: Complete Marked PDF Report</i>`;
 

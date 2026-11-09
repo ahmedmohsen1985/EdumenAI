@@ -480,6 +480,11 @@
     elements.answerImagePreview.classList.add('hidden');
     elements.answerPdfPreview.classList.add('hidden');
     elements.answerPreviewImg.src = '';
+    elements.studentText.value = '';
+    state.rawText = '';
+    state.finalText = '';
+    const badge = document.getElementById('transcriptionBadge');
+    if (badge) badge.classList.add('hidden');
   }
 
   // --- Transcription ---
@@ -512,8 +517,12 @@
       state.rawText = transcription;
       state.finalText = transcription;
       elements.studentText.value = transcription;
+      elements.studentText.readOnly = true;
 
-      showAlert('Transcription complete. Please check the text carefully before marking.', 'success');
+      const badge = document.getElementById('transcriptionBadge');
+      if (badge) badge.classList.remove('hidden');
+
+      showAlert('Handwriting transcription complete! Text is locked for authentic exam marking.', 'success');
       elements.studentText.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (err) {
       console.error('Transcription error:', err);
@@ -549,8 +558,9 @@
     }
 
     if (!finalText) {
-      showAlert('Please provide your article text.', 'error');
-      elements.studentText.focus();
+      showAlert('Please upload your handwritten article and click "Transcribe Handwriting" first.', 'error');
+      const ansSec = document.getElementById('workspaceSection');
+      if (ansSec) ansSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
 

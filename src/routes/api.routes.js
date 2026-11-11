@@ -6,11 +6,12 @@ import {
   transcribeHandwriting,
   extractTaskQuestion,
   evaluateArticle
-} from '../services/gemini.service.js';
+} from '../services/ai.service.js';
 import {
   notifyStudent,
   sendTeacherAudit,
   sendTeacherError,
+  sendTeacherQuotaAlert,
   dispatchFullReportWithPdf
 } from '../services/telegram.service.js';
 
@@ -31,7 +32,7 @@ function isAllowedUpload(file) {
   return ext === '.pdf' || ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.heif'].includes(ext);
 }
 
-// Multer storage: keep uploaded files in memory for direct forwarding to Gemini
+// Multer storage: keep uploaded files in memory for direct forwarding to the active AI provider
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -44,6 +45,50 @@ const upload = multer({
     cb(new Error('Only image files (JPG, PNG, WEBP) or PDF documents are allowed.'));
   }
 });
+
+/**
+ * Unified error handler for AI-backed API routes.
+ * Sends proactive Telegram quota/error alerts without blocking the HTTP response.
+ */
+function handleRouteAiError(res, err, operationLabel, fallbackMessage, studentInfo = null) {
+  console.error(`[API ${operationLabel}] Error:`, err);
+
+  const isQuotaError = Boolean(err?.isQuotaError || err?.code === 'QUOTA_EXCEEDED');
+  const statusCode = isQuotaError ? 429 : (err?.statusCode || 500);
+
+  if (isQuotaError) {
+    (async () => {
+      try {
+        await sendTeacherQuotaAlert({
+          provider: err.provider,
+          model: err.model,
+          operation: operationLabel,
+          retryAfter: err.retryAfter,
+          studentInfo
+        });
+      } catch (notifyErr) {
+        console.error(`[API ${operationLabel}] Teacher quota alert failed:`, notifyErr);
+      }
+    })();
+  } else if (studentInfo) {
+    (async () => {
+      try {
+        await sendTeacherError(studentInfo, err.message);
+      } catch (notifyErr) {
+        console.error(`[API ${operationLabel}] Teacher error notification failed:`, notifyErr);
+      }
+    })();
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    code: err?.code || 'AI_ERROR',
+    isQuotaError,
+    provider: err?.provider || undefined,
+    model: err?.model || undefined,
+    error: err?.message || fallbackMessage
+  });
+}
 
 /**
  * POST /api/extract-task
@@ -73,11 +118,7 @@ router.post('/extract-task', upload.single('file'), async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('[API /extract-task] Error:', err);
-    res.status(500).json({
-      success: false,
-      error: err.message || 'Task question extraction failed.'
-    });
+    handleRouteAiError(res, err, 'Task Question Extraction (/extract-task)', 'Task question extraction failed.');
   }
 });
 
@@ -102,11 +143,7 @@ router.post('/transcribe', upload.single('file'), async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('[API /transcribe] Error:', err);
-    res.status(500).json({
-      success: false,
-      error: err.message || 'Transcription failed.'
-    });
+    handleRouteAiError(res, err, 'Handwriting Transcription (/transcribe)', 'Transcription failed.');
   }
 });
 
@@ -152,21 +189,7 @@ router.post('/evaluate', async (req, res) => {
       data: evaluation
     });
   } catch (err) {
-    console.error('[API /evaluate] Error:', err);
-
-    // Inform teachers about the failure
-    (async () => {
-      try {
-        await sendTeacherError(studentInfo, err.message);
-      } catch (notifyErr) {
-        console.error('[API /evaluate] Teacher error notification failed:', notifyErr);
-      }
-    })();
-
-    res.status(500).json({
-      success: false,
-      error: err.message || 'Evaluation failed.'
-    });
+    handleRouteAiError(res, err, 'Article Evaluation (/evaluate)', 'Evaluation failed.', studentInfo);
   }
 });
 

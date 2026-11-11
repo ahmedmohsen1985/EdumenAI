@@ -429,7 +429,7 @@
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Task question extraction failed.');
+        throw createApiError(response, result, 'Task question extraction failed.');
       }
 
       const extracted = result.data.taskQuestion || '';
@@ -456,7 +456,7 @@
       }
     } catch (err) {
       console.error('Task extraction error:', err);
-      showAlert(err.message || 'Task question extraction failed. Please try again.', 'error');
+      showAlert(err.message || 'Task question extraction failed. Please try again.', err.isQuota ? 'quota' : 'error');
     } finally {
       setTaskLoading(false);
     }
@@ -546,7 +546,7 @@
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Transcription failed.');
+        throw createApiError(response, result, 'Transcription failed.');
       }
 
       const transcription = result.data.transcription || '';
@@ -565,7 +565,7 @@
       elements.studentText.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (err) {
       console.error('Transcription error:', err);
-      showAlert(err.message || 'Transcription failed. Please try again.', 'error');
+      showAlert(err.message || 'Transcription failed. Please try again.', err.isQuota ? 'quota' : 'error');
     } finally {
       state.isTranscribing = false;
       setTranscribeLoading(false);
@@ -630,7 +630,7 @@
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Evaluation failed.');
+        throw createApiError(response, result, 'Evaluation failed.');
       }
 
       state.evaluation = result.data;
@@ -641,7 +641,7 @@
       exportAndSendPdfReport(student, taskPrompt, result.data, finalText, state.rawText);
     } catch (err) {
       console.error('Evaluation error:', err);
-      showAlert(err.message || 'Evaluation failed. Please try again.', 'error');
+      showAlert(err.message || 'Evaluation failed. Please try again.', err.isQuota ? 'quota' : 'error');
     } finally {
       state.isEvaluating = false;
       setEvalLoading(false);
@@ -1176,22 +1176,49 @@
     }
   }
 
+  function createApiError(response, result, fallbackMessage) {
+    const err = new Error((result && result.error) || fallbackMessage);
+    err.code = result && result.code;
+    err.isQuota = Boolean(
+      (result && (result.isQuotaError || result.code === 'QUOTA_EXCEEDED')) ||
+      (response && response.status === 429)
+    );
+    return err;
+  }
+
   function showAlert(message, type = 'error') {
-    const isError = type === 'error';
-    const bgClass = isError ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800';
-    const icon = isError
-      ? '<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
-      : '<svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+    const isQuota = type === 'quota';
+    const isError = type === 'error' || isQuota;
+    const bgClass = isQuota
+      ? 'bg-amber-50 border-amber-300 text-amber-950 shadow-sm'
+      : isError
+      ? 'bg-red-50 border-red-200 text-red-800'
+      : 'bg-emerald-50 border-emerald-200 text-emerald-800';
+
+    const icon = isQuota
+      ? '<svg class="w-6 h-6 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"></path></svg>'
+      : isError
+      ? '<svg class="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+      : '<svg class="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+
+    const contentHtml = isQuota
+      ? `<div>
+           <p class="text-sm font-bold text-amber-900 mb-1">Service Quota Exhausted — Billing Action Required</p>
+           <p class="text-sm">${escapeHtml(message)}</p>
+         </div>`
+      : `<p class="text-sm font-medium">${escapeHtml(message)}</p>`;
 
     elements.alertContainer.innerHTML = `
       <div class="${bgClass} border rounded-xl p-4 flex items-start gap-3">
         ${icon}
-        <p class="text-sm font-medium">${escapeHtml(message)}</p>
+        ${contentHtml}
       </div>
     `;
     elements.alertContainer.classList.remove('hidden');
 
-    if (!isError) {
+    if (isError) {
+      elements.alertContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
       setTimeout(() => {
         elements.alertContainer.classList.add('hidden');
       }, 5000);

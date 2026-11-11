@@ -246,6 +246,60 @@ export async function dispatchFullReportWithPdf({ studentInfo, evaluation, rawTe
 }
 
 /**
+ * Escapes HTML special characters for Telegram HTML parse_mode.
+ */
+function escapeTelegramHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Cooldown tracker for quota alerts to avoid flooding the teacher group (15 mins per provider+model)
+const quotaAlertCooldowns = new Map();
+const QUOTA_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
+
+/**
+ * Sends an administrative quota/billing exhaustion alert to the teacher group with spam protection.
+ */
+export async function sendTeacherQuotaAlert({
+  provider = 'unknown',
+  model = 'unknown',
+  operation = 'AI Operation',
+  retryAfter = null,
+  studentInfo = null
+}) {
+  const teacherGroup = getTeacherGroup();
+  if (!teacherGroup) {
+    return null;
+  }
+
+  const key = `${provider}_${model}`;
+  const lastAlert = quotaAlertCooldowns.get(key) || 0;
+  if (Date.now() - lastAlert < QUOTA_ALERT_COOLDOWN_MS) {
+    console.log(`[Telegram] Quota alert for ${key} suppressed (cooldown active).`);
+    return null;
+  }
+  quotaAlertCooldowns.set(key, Date.now());
+
+  const retryLine = retryAfter ? `\n⏳ <b>Provider Retry Hint:</b> ${escapeTelegramHtml(retryAfter)}` : '';
+  const studentLine = studentInfo?.name
+    ? `\n👤 <b>Affected Student:</b> ${escapeTelegramHtml(studentInfo.name)} (${escapeTelegramHtml(studentInfo.className || studentInfo.school || 'General')})`
+    : '';
+
+  const msg = `🚨 <b>تنبيه إداري: نفاد رصيد أو حصة الذكاء الاصطناعي (Quota Exhausted)</b>
+
+🔌 <b>المزود (Provider):</b> <code>${escapeTelegramHtml(provider)}</code>
+🤖 <b>النموذج (Model):</b> <code>${escapeTelegramHtml(model)}</code>
+⚙️ <b>العملية المتأثرة:</b> ${escapeTelegramHtml(operation)}${retryLine}${studentLine}
+
+🛑 <i>تم إيقاف التصحيح التلقائي مؤقتاً للحفاظ على نفس الجودة وعدم الانتقال لنماذج أضعف.</i>
+💳 <b>الإجراء المطلوب:</b> يرجى شحن رصيد الحساب أو تفعيل خطة الدفع حسب الاستخدام (<b>Pay-as-you-go</b>) لدى المزود المذكور لاستئناف العمل فوراً.`;
+
+  return sendTelegramMessage(teacherGroup, msg);
+}
+
+/**
  * Sends a fallback error notification to the teacher group.
  */
 export async function sendTeacherError(studentInfo, errorMessage) {
@@ -256,10 +310,10 @@ export async function sendTeacherError(studentInfo, errorMessage) {
 
   const msg = `
 ⚠️ <b>EdumenAI Error - Exercise 4</b>
-👤 <b>Student:</b> ${studentInfo?.name || 'Unknown'} (${studentInfo?.school || 'General'})
-📱 <b>Telegram:</b> ${studentInfo?.telegram || 'N/A'}
+👤 <b>Student:</b> ${escapeTelegramHtml(studentInfo?.name || 'Unknown')} (${escapeTelegramHtml(studentInfo?.school || 'General')})
+📱 <b>Telegram:</b> ${escapeTelegramHtml(studentInfo?.telegram || 'N/A')}
 
-❌ <b>Error:</b> ${errorMessage}
+❌ <b>Error:</b> ${escapeTelegramHtml(errorMessage)}
 `;
 
   return sendTelegramMessage(teacherGroup, msg);

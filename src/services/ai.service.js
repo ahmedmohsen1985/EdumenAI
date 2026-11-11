@@ -274,7 +274,7 @@ export const MARKING_JSON_SCHEMA = {
     },
     corrected_version: {
       type: 'string',
-      description: "Full, complete polished student text covering 100% of the student draft from the first word to the very last word without cutting off. Highlight corrections with <mark class='correction'>word</mark> tags on the entire corrected word. Never tag single letters. Do not use addition or other tags."
+      description: "Full, complete polished student text covering 100% of the student draft from the first word to the very last concluding sentence without cutting off or stopping early. Highlight corrections using plain <mark>word</mark> tags (no class attribute or quotes). Never tag single letters."
     }
   },
   required: ['marks', 'justification', 'errors', 'content_feedback', 'corrected_version']
@@ -347,7 +347,7 @@ async function postJsonRequest(url, headers, body, timeoutMs) {
 /**
  * Provider Adapter 1: Google Gemini (@google/genai SDK)
  */
-async function callGoogleAdapter({ apiKey, model, systemPrompt, userPrompt, file, jsonSchema, temperature, maxOutputTokens }) {
+async function callGoogleAdapter({ apiKey, model, systemPrompt, userPrompt, file, jsonSchema, temperature, maxOutputTokens, timeoutMs }) {
   const ai = getGoogleClient(apiKey);
   const contents = file
     ? [
@@ -358,7 +358,8 @@ async function callGoogleAdapter({ apiKey, model, systemPrompt, userPrompt, file
 
   const reqConfig = {
     temperature,
-    maxOutputTokens
+    maxOutputTokens,
+    abortSignal: AbortSignal.timeout(timeoutMs)
   };
 
   if (systemPrompt) {
@@ -374,6 +375,11 @@ async function callGoogleAdapter({ apiKey, model, systemPrompt, userPrompt, file
     contents,
     config: reqConfig
   });
+
+  const finishReason = response?.candidates?.[0]?.finishReason;
+  if (finishReason && finishReason !== 'STOP') {
+    console.warn(`[Google Adapter] Finish reason for '${model}': ${finishReason}`);
+  }
 
   return (response.text || '').trim();
 }
@@ -395,6 +401,7 @@ function extractOpenAiMessageText(content) {
  */
 async function callOpenAiCompatibleAdapter({
   provider,
+  taskType,
   apiKey,
   model,
   systemPrompt,
@@ -461,6 +468,17 @@ async function callOpenAiCompatibleAdapter({
       payload.max_tokens = maxOutputTokens;
     }
 
+    if (provider === 'openrouter') {
+      const reasoningRaw =
+        (taskType === 'vision'
+          ? process.env.OPENROUTER_VISION_REASONING
+          : process.env.OPENROUTER_EVAL_REASONING) || '';
+      const effort = reasoningRaw.trim().toLowerCase();
+      if (effort) {
+        payload.reasoning = { effort };
+      }
+    }
+
     if (provider === 'openrouter' && file?.mimeType === 'application/pdf') {
       const pdfEngine = (process.env.OPENROUTER_PDF_ENGINE || '').trim();
       if (pdfEngine) {
@@ -484,9 +502,21 @@ async function callOpenAiCompatibleAdapter({
     return payload;
   };
 
+  const logAndExtract = (data) => {
+    const choice = data?.choices?.[0];
+    const finishReason = choice?.finish_reason;
+    const usage = data?.usage;
+    if (usage || (finishReason && finishReason !== 'stop')) {
+      console.log(
+        `[${provider} Adapter] Model '${model}' finish=${finishReason || 'unknown'} prompt_tok=${usage?.prompt_tokens ?? '?'} completion_tok=${usage?.completion_tokens ?? '?'}`
+      );
+    }
+    return extractOpenAiMessageText(choice?.message?.content);
+  };
+
   try {
     const data = await postJsonRequest(url, headers, buildPayload(jsonSchema ? 'json_schema' : 'none'), timeoutMs);
-    return extractOpenAiMessageText(data?.choices?.[0]?.message?.content);
+    return logAndExtract(data);
   } catch (err) {
     // Some OpenRouter third-party models reject strict json_schema (400) while supporting json_object or plain JSON prompt.
     // Retry once on the exact same model with relaxed format header without altering model quality.
@@ -501,11 +531,11 @@ async function callOpenAiCompatibleAdapter({
 
     try {
       const data = await postJsonRequest(url, headers, buildPayload('json_object'), timeoutMs);
-      return extractOpenAiMessageText(data?.choices?.[0]?.message?.content);
+      return logAndExtract(data);
     } catch (secondErr) {
       if (secondErr?.statusCode === 400) {
         const data = await postJsonRequest(url, headers, buildPayload('none'), timeoutMs);
-        return extractOpenAiMessageText(data?.choices?.[0]?.message?.content);
+        return logAndExtract(data);
       }
       throw secondErr;
     }
@@ -608,6 +638,16 @@ const PROVIDER_ADAPTERS = {
   anthropic: callAnthropicAdapter
 };
 
+function resolveMaxOutputTokens(provider, taskType, explicitMax) {
+  if (typeof explicitMax === 'number' && explicitMax > 0) return explicitMax;
+  if (taskType === 'evaluation') {
+    const envMax = Number(process.env.AI_EVAL_MAX_TOKENS || 0);
+    if (envMax > 0) return envMax;
+    return provider === 'anthropic' ? 8192 : 16384;
+  }
+  return 4096;
+}
+
 /**
  * General, flexible multi-provider AI invocation entry point.
  * Routes each task strictly to the configured specialist provider/model in .env (zero downgrade fallback).
@@ -621,7 +661,7 @@ export async function invokeAiModel({
   jsonSchema = null,
   schemaName = 'marking_report',
   temperature = 0.0,
-  maxOutputTokens = 8192
+  maxOutputTokens = null
 }) {
   const { provider, model } = getTaskAiConfig(taskType);
   const providerLabel = PROVIDER_DISPLAY_NAMES[provider] || provider;
@@ -650,13 +690,16 @@ export async function invokeAiModel({
     });
   }
 
+  const effectiveMaxTokens = resolveMaxOutputTokens(provider, taskType, maxOutputTokens);
   const keyTail = apiKey.length > 6 ? apiKey.slice(-6) : 'KEY';
   console.log(
-    `[AI Gateway] [${taskType.toUpperCase()}] ${operationName}: invoking '${model}' on ${providerLabel} (Key ...${keyTail})`
+    `[AI Gateway] [${taskType.toUpperCase()}] ${operationName}: invoking '${model}' on ${providerLabel} (Key ...${keyTail}, maxTokens=${effectiveMaxTokens})`
   );
 
   try {
     const output = await adapter({
+      provider,
+      taskType,
       apiKey,
       model,
       systemPrompt,
@@ -665,7 +708,7 @@ export async function invokeAiModel({
       jsonSchema,
       schemaName,
       temperature,
-      maxOutputTokens,
+      maxOutputTokens: effectiveMaxTokens,
       timeoutMs: config.aiTimeoutMs
     });
 
@@ -844,6 +887,87 @@ function normalizeMarks(marks) {
   };
 }
 
+function stripHtmlTags(html) {
+  return String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function countPlainWords(text) {
+  const plain = stripHtmlTags(text);
+  return plain ? plain.split(/\s+/).filter(Boolean).length : 0;
+}
+
+/**
+ * Normalizes highlight tags to unified <mark class="correction">word</mark> format.
+ */
+export function normalizeCorrectedHtml(rawHtml, fallbackText = '') {
+  let corrected = String(rawHtml || fallbackText || '').trim();
+  corrected = corrected.replace(/<mark(?:\s+[^>]*)?>/gi, '<mark class="correction">');
+  corrected = corrected.replace(/<mark[^>]*>([A-Za-z])<\/mark>([A-Za-z0-9_]+)/g, '<mark class="correction">$1$2</mark>');
+  corrected = corrected.replace(/([A-Za-z0-9_]+)<mark[^>]*>([A-Za-z0-9_]+)<\/mark>/g, '<mark class="correction">$1$2</mark>');
+  return corrected;
+}
+
+/**
+ * Detects whether a model returned an abnormally short or mid-sentence truncated corrected_version.
+ */
+export function isCorrectedVersionTruncated(studentText, correctedHtml) {
+  const plain = stripHtmlTags(correctedHtml);
+  if (!plain) return true;
+
+  const origWords = countPlainWords(studentText);
+  const corrWords = countPlainWords(plain);
+
+  if (origWords >= 20) {
+    if (corrWords < Math.floor(origWords * 0.78)) {
+      return true;
+    }
+    const endsWithPunctuation = /[.!?]["'”’)\]]*$/.test(plain);
+    if (!endsWithPunctuation && corrWords < Math.floor(origWords * 0.95)) {
+      return true;
+    }
+  } else if (origWords >= 5 && corrWords < Math.floor(origWords * 0.5)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Plain-text recovery pass (without JSON grammar constraints) when corrected_version is cut off.
+ */
+async function recoverCompleteCorrectedVersion(studentText, errors = []) {
+  const errorsSummary = Array.isArray(errors) && errors.length
+    ? errors.map((e) => `- "${e.original}" -> "${e.correction}"`).join('\n')
+    : 'Fix all spelling, grammar, capitalisation, punctuation, and awkward phrasing slips.';
+
+  const recoverySystemPrompt = `You are an Oxford AQA IGCSE ESL copy-editor.
+Output ONLY the COMPLETE corrected version of the student's entire submission from the very first word to the very last concluding sentence.
+Rules:
+1. Cover 100% of the student's paragraphs and sentences without cutting off or summarizing.
+2. Wrap every corrected word or phrase in plain <mark>word</mark> tags (no class attribute, always wrap whole words, never single letters).
+3. Output ONLY the corrected HTML/text article itself—no JSON, no markdown code blocks, and no intro or outro commentary.`;
+
+  const recoveryUserPrompt = `ORIGINAL STUDENT DRAFT:\n${studentText}\n\nERRORS IDENTIFIED:\n${errorsSummary}\n\nWrite the complete corrected article from start to finish:`;
+
+  const { text } = await invokeAiModel({
+    taskType: 'evaluation',
+    operationName: 'CorrectedVersionRecovery',
+    systemPrompt: recoverySystemPrompt,
+    userPrompt: recoveryUserPrompt,
+    jsonSchema: null,
+    temperature: 0.0,
+    maxOutputTokens: 4096
+  });
+
+  // Strip accidental markdown fences if any model wrapped plain text in ```
+  const cleaned = String(text || '')
+    .replace(/^```(?:html|text)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  return normalizeCorrectedHtml(cleaned);
+}
+
 /**
  * Evaluates the final student text against the Exercise 4 rubric.
  * Uses the configured 'evaluation' provider/model.
@@ -862,7 +986,7 @@ STUDENT SUBMITTED DRAFT:
 ${studentText}
 
 CRITICAL REQUIREMENT FOR 'corrected_version':
-Rewrite and polish the student's submission from start to finish. You MUST NOT cut off, shorten, or stop early. Every single paragraph and sentence down to the closing line must be included in 'corrected_version'.
+Rewrite and polish the student's submission from start to finish. You MUST NOT cut off, shorten, or stop early. Every single paragraph and sentence down to the closing line must be included in 'corrected_version', using plain <mark>...</mark> tags around corrected words.
 
 OUTPUT REQUIREMENT:
 Return strictly valid JSON with keys: marks, justification, errors, content_feedback, corrected_version.
@@ -880,7 +1004,7 @@ Return strictly valid JSON with keys: marks, justification, errors, content_feed
     jsonSchema: MARKING_JSON_SCHEMA,
     schemaName: 'submit_marking_report',
     temperature: 0.0,
-    maxOutputTokens: 8192
+    maxOutputTokens: null
   });
 
   const parsed = extractAndParseJson(text, provider, model);
@@ -893,10 +1017,30 @@ Return strictly valid JSON with keys: marks, justification, errors, content_feed
   parsed.errors = Array.isArray(parsed.errors) ? parsed.errors : [];
   parsed.content_feedback = Array.isArray(parsed.content_feedback) ? parsed.content_feedback : [];
 
-  let corrected = String(parsed.corrected_version || studentText);
-  corrected = corrected.replace(/<mark class=["']addition["']>/gi, '<mark class="correction">');
-  corrected = corrected.replace(/<mark[^>]*>([A-Za-z])<\/mark>([A-Za-z0-9_]+)/g, '<mark class="correction">$1$2</mark>');
-  corrected = corrected.replace(/([A-Za-z0-9_]+)<mark[^>]*>([A-Za-z0-9_]+)<\/mark>/g, '<mark class="correction">$1$2</mark>');
+  let corrected = normalizeCorrectedHtml(parsed.corrected_version, studentText);
+
+  if (isCorrectedVersionTruncated(studentText, corrected)) {
+    const origWords = countPlainWords(studentText);
+    const currWords = countPlainWords(corrected);
+    console.warn(
+      `[AI Gateway] Truncated 'corrected_version' detected (${currWords}/${origWords} words). Triggering plain-text completion recovery...`
+    );
+    try {
+      const recovered = await recoverCompleteCorrectedVersion(studentText, parsed.errors);
+      if (countPlainWords(recovered) > currWords) {
+        corrected = recovered;
+        console.log(
+          `[AI Gateway] Plain-text recovery succeeded (${countPlainWords(corrected)}/${origWords} words).`
+        );
+      }
+    } catch (recErr) {
+      if (recErr instanceof AiServiceError && recErr.isQuotaError) {
+        throw recErr;
+      }
+      console.warn('[AI Gateway] Corrected version recovery failed, keeping best partial output:', recErr.message);
+    }
+  }
+
   parsed.corrected_version = corrected;
 
   return parsed;

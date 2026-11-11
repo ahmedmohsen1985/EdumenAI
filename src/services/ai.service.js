@@ -852,9 +852,10 @@ Include:
 
 Rules:
 1. Output ONLY the clean question text in clear English.
-2. Maintain paragraph breaks and bullet points.
-3. Do NOT include page numbers, exam barcodes, candidate numbers, or center headers.
-4. Do NOT answer the question. Only extract the question itself.`;
+2. Maintain paragraph breaks and bullet points (using plain '-' for bullets).
+3. Do NOT use Markdown formatting such as **bold**, *italic*, ## headings, or backticks.
+4. Do NOT include page numbers, exam barcodes, candidate numbers, or center headers.
+5. Do NOT answer the question. Only extract the question itself.`;
 
   const { text } = await invokeAiModel({
     taskType: 'vision',
@@ -866,7 +867,10 @@ Rules:
     maxOutputTokens: 2048
   });
 
-  return text.trim();
+  return text
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .trim();
 }
 
 /**

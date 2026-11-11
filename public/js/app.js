@@ -788,7 +788,10 @@
       danger: [176, 58, 46],
       gray: [120, 120, 120],
       white: [255, 255, 255],
-      lightGreen: [232, 245, 233]
+      lightGreen: [232, 245, 233],
+      highlightBg: [254, 240, 138], // Yellow marker #FEF08A
+      lightGrayBg: [249, 250, 251], // Card background #F9FAFB
+      borderGray: [229, 231, 235]   // Card border #E5E7EB
     };
 
     let y = margin.top;
@@ -802,12 +805,16 @@
       doc.text(`Page ${pageNum}`, pageWidth - margin.right, 290, { align: 'right' });
     }
 
+    function forcePageBreak() {
+      addFooter(pageNumber);
+      doc.addPage();
+      pageNumber++;
+      y = margin.top + 5;
+    }
+
     function checkPageBreak(neededHeight) {
       if (y + (neededHeight || 0) > BOTTOM) {
-        addFooter(pageNumber);
-        doc.addPage();
-        pageNumber++;
-        y = margin.top + 5;
+        forcePageBreak();
         return true;
       }
       return false;
@@ -836,6 +843,267 @@
         doc.text(line, x, y);
         y += lineHeight;
       });
+    }
+
+    function htmlToRichParagraphs(html) {
+      const sanitized = sanitizeCorrectedHtml(html);
+      const parser = new DOMParser();
+      const htmlDoc = parser.parseFromString(sanitized, 'text/html');
+      const paragraphs = [[]];
+
+      function pushText(text, highlight) {
+        const parts = String(text || '').split(/\r?\n/);
+        parts.forEach((part, idx) => {
+          if (idx > 0) paragraphs.push([]);
+          if (part) paragraphs[paragraphs.length - 1].push({ text: part, highlight });
+        });
+      }
+
+      function walk(node, highlight = false) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          pushText(node.textContent, highlight);
+          return;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const tag = node.tagName.toLowerCase();
+          if (tag === 'br') {
+            paragraphs.push([]);
+            return;
+          }
+          const isBlock = tag === 'p' || tag === 'div';
+          if (isBlock && paragraphs[paragraphs.length - 1].length > 0) {
+            paragraphs.push([]);
+          }
+          const nextHighlight = highlight || tag === 'mark';
+          Array.from(node.childNodes).forEach((child) => walk(child, nextHighlight));
+          if (isBlock && paragraphs[paragraphs.length - 1].length > 0) {
+            paragraphs.push([]);
+          }
+        }
+      }
+
+      Array.from(htmlDoc.body.childNodes).forEach((child) => walk(child, false));
+      return paragraphs.filter((p, i, arr) => p.length > 0 || (i > 0 && i < arr.length - 1 && arr[i - 1].length > 0));
+    }
+
+    function markdownToRichParagraphs(rawText, boldColor) {
+      const lines = String(rawText || '').replace(/\r\n/g, '\n').split('\n');
+      return lines.map((rawLine) => {
+        let line = rawLine.trimEnd();
+        const headingMatch = line.match(/^#{1,6}\s+(.*)$/);
+        if (headingMatch) {
+          return [{ text: headingMatch[1].trim(), bold: true, color: boldColor }];
+        }
+        line = line.replace(/^\s*\*\s+/, '- ');
+
+        const spans = [];
+        const regex = /\*\*([^*]+)\*\*/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = regex.exec(line)) !== null) {
+          if (match.index > lastIndex) {
+            spans.push({ text: line.slice(lastIndex, match.index), bold: false });
+          }
+          spans.push({ text: match[1], bold: true, color: boldColor });
+          lastIndex = regex.lastIndex;
+        }
+        if (lastIndex < line.length) {
+          spans.push({ text: line.slice(lastIndex), bold: false });
+        }
+        return spans;
+      });
+    }
+
+    function layoutRichParagraphs(paragraphs, maxWidth, fontSize) {
+      const allLines = [];
+
+      paragraphs.forEach((spans) => {
+        if (!spans || spans.length === 0) {
+          allLines.push({ isBlank: true });
+          return;
+        }
+
+        const tokens = [];
+        spans.forEach((span) => {
+          const safe = pdfSafe(span.text || '');
+          if (!safe) return;
+          const parts = safe.split(/(\s+)/);
+          parts.forEach((part) => {
+            if (!part) return;
+            const isSpace = /^\s+$/.test(part);
+            const text = isSpace ? ' ' : part;
+            doc.setFontSize(fontSize);
+            doc.setFont(undefined, span.bold ? 'bold' : 'normal');
+            const w = doc.getTextWidth(text);
+
+            if (!isSpace && w > maxWidth) {
+              const broken = doc.splitTextToSize(text, maxWidth);
+              broken.forEach((chunk) => {
+                tokens.push({
+                  text: chunk,
+                  isSpace: false,
+                  width: doc.getTextWidth(chunk),
+                  bold: Boolean(span.bold),
+                  highlight: Boolean(span.highlight),
+                  color: span.color || null
+                });
+              });
+            } else {
+              tokens.push({
+                text,
+                isSpace,
+                width: w,
+                bold: Boolean(span.bold),
+                highlight: Boolean(span.highlight),
+                color: span.color || null
+              });
+            }
+          });
+        });
+
+        let currentLine = [];
+        let currentWidth = 0;
+
+        const pushLine = () => {
+          while (currentLine.length > 0 && currentLine[currentLine.length - 1].isSpace) {
+            currentLine.pop();
+          }
+          allLines.push({ isBlank: false, tokens: currentLine });
+          currentLine = [];
+          currentWidth = 0;
+        };
+
+        tokens.forEach((tok) => {
+          if (currentLine.length === 0 && tok.isSpace) {
+            return;
+          }
+          if (tok.isSpace && currentLine[currentLine.length - 1]?.isSpace) {
+            return;
+          }
+          if (!tok.isSpace && currentWidth + tok.width > maxWidth && currentLine.length > 0) {
+            pushLine();
+          }
+          currentLine.push(tok);
+          currentWidth += tok.width;
+        });
+
+        if (currentLine.length > 0) {
+          pushLine();
+        }
+      });
+
+      return allLines;
+    }
+
+    function drawRichLineTokens(tokens, startX, baselineY, fontSize, defaultColor) {
+      // 1. Draw continuous yellow highlight strips behind consecutive highlighted tokens
+      let cursorX = startX;
+      let runStartX = null;
+      let runWidth = 0;
+
+      const flushHighlight = () => {
+        if (runStartX !== null && runWidth > 0) {
+          doc.setFillColor(...colours.highlightBg);
+          doc.roundedRect(runStartX - 0.5, baselineY - 2.9, runWidth + 1.0, 4.0, 0.6, 0.6, 'F');
+        }
+        runStartX = null;
+        runWidth = 0;
+      };
+
+      tokens.forEach((tok) => {
+        if (tok.highlight) {
+          if (runStartX === null) runStartX = cursorX;
+          runWidth += tok.width;
+        } else {
+          flushHighlight();
+        }
+        cursorX += tok.width;
+      });
+      flushHighlight();
+
+      // 2. Render text over highlights
+      cursorX = startX;
+      tokens.forEach((tok) => {
+        if (!tok.isSpace) {
+          doc.setFont(undefined, tok.bold ? 'bold' : 'normal');
+          doc.setFontSize(fontSize);
+          doc.setTextColor(...(tok.color || defaultColor));
+          doc.text(tok.text, cursorX, baselineY);
+        }
+        cursorX += tok.width;
+      });
+    }
+
+    function drawRichParagraphs(paragraphs, opts = {}) {
+      const {
+        x = margin.left,
+        maxWidth = contentWidth,
+        fontSize = 8.5,
+        lineHeight = 4.6,
+        baselineOffset = 3.2,
+        boxX = null,
+        boxWidth = null,
+        boxBg = null,
+        boxBorder = null,
+        padX = 0,
+        padY = 0,
+        defaultColor = colours.dark
+      } = opts;
+
+      const hasBox = Boolean(boxBg && boxWidth);
+      const textX = hasBox ? boxX + padX : x;
+      const textMaxW = hasBox ? boxWidth - padX * 2 : maxWidth;
+      const allLines = layoutRichParagraphs(paragraphs, textMaxW, fontSize);
+
+      if (!hasBox) {
+        allLines.forEach((line) => {
+          if (line.isBlank) {
+            y += lineHeight * 0.65;
+            return;
+          }
+          checkPageBreak(lineHeight);
+          drawRichLineTokens(line.tokens, textX, y, fontSize, defaultColor);
+          y += lineHeight;
+        });
+        return;
+      }
+
+      let idx = 0;
+      while (idx < allLines.length) {
+        checkPageBreak(lineHeight + padY * 2);
+
+        const availableHeight = BOTTOM - y;
+        const maxLinesHere = Math.max(1, Math.floor((availableHeight - padY * 2) / lineHeight));
+        const sliceEnd = Math.min(allLines.length, idx + maxLinesHere);
+        const pageSlice = allLines.slice(idx, sliceEnd);
+        const sliceHeight = pageSlice.reduce((sum, l) => sum + (l.isBlank ? lineHeight * 0.65 : lineHeight), 0);
+        const boxHeight = sliceHeight + padY * 2;
+
+        doc.setFillColor(...boxBg);
+        if (boxBorder) {
+          doc.setDrawColor(...boxBorder);
+          doc.setLineWidth(0.3);
+          doc.roundedRect(boxX, y, boxWidth, boxHeight, 2, 2, 'FD');
+        } else {
+          doc.roundedRect(boxX, y, boxWidth, boxHeight, 2, 2, 'F');
+        }
+
+        let cursorY = y + padY + baselineOffset;
+        pageSlice.forEach((line) => {
+          if (line.isBlank) {
+            cursorY += lineHeight * 0.65;
+            return;
+          }
+          drawRichLineTokens(line.tokens, textX, cursorY, fontSize, defaultColor);
+          cursorY += lineHeight;
+        });
+
+        y += boxHeight;
+        idx = sliceEnd;
+        if (idx < allLines.length) {
+          forcePageBreak();
+        }
+      }
     }
 
     // --- HEADER BANNER ---
@@ -930,7 +1198,16 @@
 
     // --- TASK QUESTION ---
     addSectionHeader('TASK QUESTION', colours.primary);
-    addWrappedText(taskPrompt || 'No task question prompt recorded.', margin.left + 2, contentWidth - 4, 8.5, 4.2);
+    const questionParagraphs = markdownToRichParagraphs(
+      taskPrompt || 'No task question prompt recorded.',
+      colours.primary
+    );
+    drawRichParagraphs(questionParagraphs, {
+      x: margin.left + 2,
+      maxWidth: contentWidth - 4,
+      fontSize: 8.5,
+      lineHeight: 4.3
+    });
     y += 4;
 
     // --- STUDENT SUBMITTED ARTICLE ---
@@ -954,16 +1231,23 @@
     addSectionHeader('EXAMINER VERDICT', colours.secondary);
     const just = evaluation.justification || {};
     if (just.content) {
-      addWrappedText(`Content: ${just.content}`, margin.left + 2, contentWidth - 4, 8.5, 4.2);
-      y += 1;
+      drawRichParagraphs(
+        [[{ text: 'Content: ', bold: true, color: colours.primary }, { text: just.content, bold: false }]],
+        { x: margin.left + 2, maxWidth: contentWidth - 4, fontSize: 8.5, lineHeight: 4.3 }
+      );
+      y += 1.5;
     }
     if (just.language) {
-      addWrappedText(`Language: ${just.language}`, margin.left + 2, contentWidth - 4, 8.5, 4.2);
+      drawRichParagraphs(
+        [[{ text: 'Language: ', bold: true, color: colours.primary }, { text: just.language, bold: false }]],
+        { x: margin.left + 2, maxWidth: contentWidth - 4, fontSize: 8.5, lineHeight: 4.3 }
+      );
       y += 3;
     }
 
     // --- ERRORS DETECTED TABLE ---
     const errors = Array.isArray(evaluation.errors) ? evaluation.errors : [];
+    if (errors.length > 0) checkPageBreak(25);
     addSectionHeader(`ERRORS IDENTIFIED (${errors.length})`, colours.primary);
 
     if (errors.length === 0) {
@@ -976,18 +1260,23 @@
       doc.text('No significant errors flagged. Excellent control!', margin.left + 5, y + 4.8);
       y += 11;
     } else {
-      const colWidths = [38, 48, 28, 66]; // Total = 180 mm
-      checkPageBreak(8);
-      doc.setFillColor(235, 238, 243);
-      doc.rect(margin.left, y, contentWidth, 6, 'F');
-      doc.setTextColor(...colours.dark);
-      doc.setFontSize(7.5);
-      doc.setFont(undefined, 'bold');
-      doc.text('Original', margin.left + 2, y + 4.2);
-      doc.text('Correction', margin.left + colWidths[0] + 2, y + 4.2);
-      doc.text('Type', margin.left + colWidths[0] + colWidths[1] + 2, y + 4.2);
-      doc.text('Explanation', margin.left + colWidths[0] + colWidths[1] + colWidths[2] + 2, y + 4.2);
-      y += 6.5;
+      const colWidths = [36, 46, 30, 68]; // Total = 180 mm
+
+      function drawErrorsTableHeader() {
+        checkPageBreak(8);
+        doc.setFillColor(235, 238, 243);
+        doc.rect(margin.left, y, contentWidth, 6, 'F');
+        doc.setTextColor(...colours.dark);
+        doc.setFontSize(7.5);
+        doc.setFont(undefined, 'bold');
+        doc.text('Original', margin.left + 2, y + 4.2);
+        doc.text('Correction', margin.left + colWidths[0] + 2, y + 4.2);
+        doc.text('Type', margin.left + colWidths[0] + colWidths[1] + 2, y + 4.2);
+        doc.text('Explanation', margin.left + colWidths[0] + colWidths[1] + colWidths[2] + 2, y + 4.2);
+        y += 6.5;
+      }
+
+      drawErrorsTableHeader();
 
       errors.forEach((errItem, idx) => {
         const orig = pdfSafe(errItem.original || '');
@@ -996,13 +1285,16 @@
         const expl = pdfSafe(errItem.explanation || '');
 
         doc.setFontSize(7.5);
-        const explLines = doc.splitTextToSize(expl, colWidths[3] - 4);
         const origLines = doc.splitTextToSize(orig, colWidths[0] - 4);
         const corrLines = doc.splitTextToSize(corr, colWidths[1] - 4);
-        const rowLines = Math.max(explLines.length, origLines.length, corrLines.length, 1);
+        const catLines = doc.splitTextToSize(cat, colWidths[2] - 4);
+        const explLines = doc.splitTextToSize(expl, colWidths[3] - 4);
+        const rowLines = Math.max(explLines.length, origLines.length, corrLines.length, catLines.length, 1);
         const rowHeight = Math.max(rowLines * 3.8 + 2.5, 6.5);
 
-        checkPageBreak(rowHeight);
+        if (checkPageBreak(rowHeight)) {
+          drawErrorsTableHeader();
+        }
 
         if (idx % 2 === 1) {
           doc.setFillColor(250, 250, 250);
@@ -1019,7 +1311,7 @@
 
         doc.setTextColor(...colours.primary);
         doc.setFont(undefined, 'normal');
-        doc.text(cat, margin.left + colWidths[0] + colWidths[1] + 2, y + 3.5);
+        catLines.forEach((l, li) => doc.text(l, margin.left + colWidths[0] + colWidths[1] + 2, y + 3.5 + li * 3.8));
 
         doc.setTextColor(...colours.dark);
         explLines.forEach((l, li) => doc.text(l, margin.left + colWidths[0] + colWidths[1] + colWidths[2] + 2, y + 3.5 + li * 3.8));
@@ -1036,16 +1328,27 @@
     // --- CONTENT FEEDBACK ---
     const feedback = Array.isArray(evaluation.content_feedback) ? evaluation.content_feedback : [];
     if (feedback.length > 0) {
+      checkPageBreak(18);
       addSectionHeader('CONTENT & EXPANSION FEEDBACK', colours.success);
       feedback.forEach((pt) => {
-        checkPageBreak(6);
-        doc.setTextColor(...colours.success);
+        const safePt = pdfSafe(pt);
         doc.setFontSize(8.5);
-        doc.setFont(undefined, 'bold');
-        doc.text('•', margin.left + 2, y + 4);
-        doc.setTextColor(...colours.dark);
         doc.setFont(undefined, 'normal');
-        addWrappedText(pt, margin.left + 6, contentWidth - 8, 8.5, 4.2);
+        const ptLines = doc.splitTextToSize(safePt, contentWidth - 9);
+        const lineH = 4.3;
+
+        ptLines.forEach((line, lineIdx) => {
+          checkPageBreak(lineH);
+          if (lineIdx === 0) {
+            doc.setFillColor(...colours.success);
+            doc.circle(margin.left + 3, y - 0.9, 0.75, 'F');
+          }
+          doc.setTextColor(...colours.dark);
+          doc.setFontSize(8.5);
+          doc.setFont(undefined, 'normal');
+          doc.text(line, margin.left + 6.5, y);
+          y += lineH;
+        });
         y += 1.5;
       });
       y += 3;
@@ -1054,10 +1357,33 @@
     // --- CORRECTED VERSION ---
     const correctedHtml = evaluation.corrected_version || '';
     if (correctedHtml) {
+      checkPageBreak(26);
       addSectionHeader('CORRECTED VERSION', colours.primary);
-      const plainCorrected = correctedHtml.replace(/<[^>]*>/g, '');
-      addWrappedText(plainCorrected, margin.left + 2, contentWidth - 4, 8.5, 4.5);
+      const richParagraphs = htmlToRichParagraphs(correctedHtml);
+      drawRichParagraphs(richParagraphs, {
+        boxX: margin.left,
+        boxWidth: contentWidth,
+        boxBg: colours.lightGrayBg,
+        boxBorder: colours.borderGray,
+        padX: 4,
+        padY: 4,
+        fontSize: 8.8,
+        lineHeight: 5.0,
+        baselineOffset: 3.2
+      });
       y += 4;
+
+      // Yellow Highlight Legend matching web report UI
+      checkPageBreak(7);
+      doc.setFillColor(...colours.highlightBg);
+      doc.setDrawColor(234, 210, 90);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(margin.left + 1, y - 2.6, 3.6, 3.2, 0.5, 0.5, 'FD');
+      doc.setTextColor(...colours.gray);
+      doc.setFontSize(7.5);
+      doc.setFont(undefined, 'normal');
+      doc.text('Highlighted Correction', margin.left + 6.5, y);
+      y += 6;
     }
 
     addFooter(pageNumber);

@@ -6,9 +6,11 @@ Your job is to transcribe what the student actually intended to spell, preservin
 
 ## RULE 1: CALIBRATE TO THE WRITER'S PENMANSHIP STYLE & CROSS-WORD CONSISTENCY
 Before transcribing word-by-word, examine unambiguous words across the whole sheet to calibrate to THIS writer's specific penmanship habits:
-1. COMMON DIGRAPH & LIGATURE COLLAPSES: Notice how adjacent strokes merge in fast handwriting—especially `'t'+'h'` collapsing so `'h'` loses its arch and looks like `'tl'` or `'t'` without `'h'`, `'t'` with a faint crossbar looking like `'l'`, `'o'+'u'` compressing toward `'a'`, or tight `'e'`/`'a'`/`'o'` loops closing into narrow ovals.
-2. CROSS-WORD CONSISTENCY CHECK FOR FUNCTION WORDS & COLLAPSED DIGRAPHS: If the student spells high-frequency structural/function words (pronouns, determiners, articles, prepositions, conjunctions, auxiliaries) or clear words correctly elsewhere on the paper, treat collapsed strokes in other occurrences of those words (such as `'th'` resembling `'tl'` or missing `'h'`) as penmanship style—recognize the intended word rather than inventing impossible consonant-cluster non-words.
-3. RELATIVE CAPITALISATION CHECK: Do NOT guess sentence case from grammar. Compare each word's first letter directly against clear lowercase occurrences of that same letter written by this student in adjacent words; if the initial letter is visibly full uppercase height/shape, keep it uppercase even mid-sentence.
+1. COMMON DIGRAPH & LIGATURE COLLAPSES: Notice how adjacent strokes merge or fade in fast handwriting—especially `'t'+'h'` collapsing so `'h'` loses its arch and looks like `'tl'` or `'t'` without `'h'`, `'t'` with a faint or omitted horizontal crossbar looking like a vertical stroke (`'l'`/`'i'`) or blended into surrounding letters, `'o'+'u'` compressing toward `'a'`, or tight `'e'`/`'a'`/`'o'` loops closing into narrow ovals.
+2. CROSS-WORD CONSISTENCY CHECK FOR PENMANSHIP COLLAPSES:
+   - For high-frequency structural/function words (pronouns, determiners, articles, prepositions, conjunctions, auxiliaries), treat collapsed digraphs/ligatures (such as `'th'` resembling `'tl'` or missing `'h'`) as penmanship style whenever the writer produces `'th'` clearly elsewhere on the paper—recognize the intended word cleanly.
+   - Likewise, for ANY word that THIS same student clearly spelled correctly elsewhere on the paper, if one occurrence appears altered ONLY because a `'t'` crossbar is faint/short or a cursive `'ou'`/`'eo'` join is tight (not a genuinely extra drawn letter or clearly different letter), recognize it consistently as the same intended word. Note that tightly written `'o'+'u'` has two subtle curves/dips before the following consonant, not a single plain `'a'`.
+3. RELATIVE CAPITALISATION CHECK: Do NOT guess sentence case from grammar, and do NOT force lowercase words to uppercase. Compare each word's first letter directly against clear lowercase occurrences of that SAME letter written by this student in nearby words: keep it uppercase ONLY when its height/shape clearly matches full uppercase rather than the student's ordinary lowercase strokes.
 
 ## RULE 2: PRESERVE ALL GENUINE SPELLING, CAPITALISATION & PUNCTUATION ERRORS
 Once letters and casing are calibrated using Rule 1, you are STRICTLY FORBIDDEN from silently correcting genuine errors:
@@ -19,7 +21,7 @@ Once letters and casing are calibrated using Rule 1, you are STRICTLY FORBIDDEN 
 5. EXACT PUNCTUATION (ESPECIALLY `;` VS `,`): Inspect punctuation marks carefully—if there is a dot directly above a comma, preserve it as a semicolon `;` (never downgrade `;` to `,`), and never invent missing periods or commas.
 
 ## RULE 3: CROSSED-OUT TEXT, SCRIBBLES & INSERTED REPLACEMENTS
-- Completely OMIT any word, phrase, line, or trailing punctuation covered by a strike-through line, hatching, or scribble.
+- Completely OMIT any word or phrase covered by a strike-through line, hatching, or scribble, along with any punctuation that is itself struck through or strictly follows the crossed-out segment. Preserve uncrossed punctuation that belongs to the preceding uncrossed word.
 - If a replacement word or phrase is written directly above or beside a crossed-out segment, transcribe ONLY the replacement text in the natural grammatical flow.
 - If a greeting or sentence start is crossed out and rewritten, omit the crossed-out draft and keep ONLY the final uncrossed version.
 - NEVER emit commentary or bracketed tags such as `[crossed out]`, `[illegible]`, or `[deleted]`.

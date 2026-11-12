@@ -280,6 +280,36 @@ export const MARKING_JSON_SCHEMA = {
   required: ['marks', 'justification', 'errors', 'content_feedback', 'corrected_version']
 };
 
+/**
+ * Unified Structured JSON Schema for Two-Step Forensic OCR Transcription.
+ * Forces a pre-transcription visual anomaly scan before emitting text to curb autocorrection.
+ */
+export const TRANSCRIPTION_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    pages_detected: {
+      type: 'integer',
+      description: 'Total count of handwritten exam pages visible in the uploaded file.'
+    },
+    literal_anomalies: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Visually observed non-standard spellings (extra/doubled letters, missing letters, vowel swaps) and unexpected mid-sentence capitals copied literally before transcription.'
+    },
+    transcription: {
+      type: 'string',
+      description: 'Complete, verbatim multi-paragraph transcription of all pages from start to finish, preserving every literal spelling and capitalisation slip while omitting crossed-out text.'
+    }
+  },
+  required: ['pages_detected', 'literal_anomalies', 'transcription']
+};
+
+export function isLengthTruncated(finishReason) {
+  const norm = String(finishReason || '').trim().toLowerCase();
+  return norm === 'length' || norm === 'max_tokens';
+}
+
 const GEMINI_TYPE_MAP = {
   object: Type.OBJECT,
   array: Type.ARRAY,
@@ -314,6 +344,7 @@ function convertToGeminiSchema(schema) {
 }
 
 export const MarkingResponseSchema = convertToGeminiSchema(MARKING_JSON_SCHEMA);
+export const TranscriptionResponseSchema = convertToGeminiSchema(TRANSCRIPTION_JSON_SCHEMA);
 
 /**
  * Helper to execute JSON HTTP requests with timeout and error parsing.
@@ -347,7 +378,7 @@ async function postJsonRequest(url, headers, body, timeoutMs) {
 /**
  * Provider Adapter 1: Google Gemini (@google/genai SDK)
  */
-async function callGoogleAdapter({ apiKey, model, systemPrompt, userPrompt, file, jsonSchema, temperature, maxOutputTokens, timeoutMs }) {
+async function callGoogleAdapter({ taskType, apiKey, model, systemPrompt, userPrompt, file, jsonSchema, temperature, maxOutputTokens, timeoutMs }) {
   const ai = getGoogleClient(apiKey);
   const contents = file
     ? [
@@ -370,18 +401,30 @@ async function callGoogleAdapter({ apiKey, model, systemPrompt, userPrompt, file
     reqConfig.responseSchema = convertToGeminiSchema(jsonSchema);
   }
 
+  const thinkingRaw = (
+    taskType === 'vision'
+      ? (process.env.GEMINI_VISION_THINKING_LEVEL || '')
+      : (process.env.GEMINI_EVAL_THINKING_LEVEL || '')
+  ).trim().toUpperCase();
+  if (thinkingRaw && ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'].includes(thinkingRaw)) {
+    reqConfig.thinkingConfig = { thinkingLevel: thinkingRaw };
+  }
+
   const response = await ai.models.generateContent({
     model,
     contents,
     config: reqConfig
   });
 
-  const finishReason = response?.candidates?.[0]?.finishReason;
-  if (finishReason && finishReason !== 'STOP') {
+  const finishReason = response?.candidates?.[0]?.finishReason || 'STOP';
+  if (finishReason !== 'STOP') {
     console.warn(`[Google Adapter] Finish reason for '${model}': ${finishReason}`);
   }
 
-  return (response.text || '').trim();
+  return {
+    text: (response.text || '').trim(),
+    finishReason
+  };
 }
 
 function extractOpenAiMessageText(content) {
@@ -504,14 +547,17 @@ async function callOpenAiCompatibleAdapter({
 
   const logAndExtract = (data) => {
     const choice = data?.choices?.[0];
-    const finishReason = choice?.finish_reason;
+    const finishReason = choice?.finish_reason || 'stop';
     const usage = data?.usage;
-    if (usage || (finishReason && finishReason !== 'stop')) {
+    if (usage || finishReason !== 'stop') {
       console.log(
-        `[${provider} Adapter] Model '${model}' finish=${finishReason || 'unknown'} prompt_tok=${usage?.prompt_tokens ?? '?'} completion_tok=${usage?.completion_tokens ?? '?'}`
+        `[${provider} Adapter] Model '${model}' finish=${finishReason} prompt_tok=${usage?.prompt_tokens ?? '?'} completion_tok=${usage?.completion_tokens ?? '?'}`
       );
     }
-    return extractOpenAiMessageText(choice?.message?.content);
+    return {
+      text: extractOpenAiMessageText(choice?.message?.content),
+      finishReason
+    };
   };
 
   try {
@@ -616,19 +662,23 @@ async function callAnthropicAdapter({
 
   const data = await postJsonRequest(url, headers, body, timeoutMs);
   const blocks = Array.isArray(data?.content) ? data.content : [];
+  const finishReason = data?.stop_reason || 'end_turn';
 
   if (jsonSchema) {
     const toolBlock = blocks.find((b) => b.type === 'tool_use' && b.input);
     if (toolBlock) {
-      return JSON.stringify(toolBlock.input);
+      return { text: JSON.stringify(toolBlock.input), finishReason };
     }
   }
 
-  return blocks
-    .filter((b) => b.type === 'text' && typeof b.text === 'string')
-    .map((b) => b.text)
-    .join('\n')
-    .trim();
+  return {
+    text: blocks
+      .filter((b) => b.type === 'text' && typeof b.text === 'string')
+      .map((b) => b.text)
+      .join('\n')
+      .trim(),
+    finishReason
+  };
 }
 
 const PROVIDER_ADAPTERS = {
@@ -643,6 +693,11 @@ function resolveMaxOutputTokens(provider, taskType, explicitMax) {
   if (taskType === 'evaluation') {
     const envMax = Number(process.env.AI_EVAL_MAX_TOKENS || 0);
     if (envMax > 0) return envMax;
+    return provider === 'anthropic' ? 8192 : 16384;
+  }
+  if (taskType === 'vision') {
+    const envVisionMax = Number(process.env.AI_VISION_MAX_TOKENS || 0);
+    if (envVisionMax > 0) return envVisionMax;
     return provider === 'anthropic' ? 8192 : 16384;
   }
   return 4096;
@@ -697,7 +752,7 @@ export async function invokeAiModel({
   );
 
   try {
-    const output = await adapter({
+    const rawOutput = await adapter({
       provider,
       taskType,
       apiKey,
@@ -712,8 +767,11 @@ export async function invokeAiModel({
       timeoutMs: config.aiTimeoutMs
     });
 
-    console.log(`[AI Gateway] [${taskType.toUpperCase()}] ${operationName} succeeded (${provider} / ${model})`);
-    return { text: output, provider, model };
+    const text = typeof rawOutput === 'string' ? rawOutput.trim() : String(rawOutput?.text || '').trim();
+    const finishReason = typeof rawOutput === 'string' ? 'stop' : (rawOutput?.finishReason || 'stop');
+
+    console.log(`[AI Gateway] [${taskType.toUpperCase()}] ${operationName} succeeded (${provider} / ${model}, finish=${finishReason})`);
+    return { text, finishReason, provider, model };
   } catch (err) {
     const classified = classifyAiProviderError(provider, model, taskType, err);
     console.error(
@@ -778,28 +836,20 @@ export function extractAndParseJson(rawText, provider, model) {
 }
 
 /**
- * Sanitizes transcription artifacts (orphaned greetings, overzealous autocorrect, crossed-out duplicates).
+ * Generic whitespace and meta-tag cleanup for OCR output.
+ * Strictly avoids altering student words, spellings, or essay-specific text.
  */
 export function sanitizeTranscription(text) {
   if (!text) return '';
-  let cleaned = text.trim();
-
-  // 1. Clean orphaned or duplicated greetings e.g. "Dear ," before "Dear friends,"
-  cleaned = cleaned.replace(/^Dear\s*,\s*(Dear\s+friends\b)/im, '$1');
-  cleaned = cleaned.replace(/^Dear\s*,\s*/im, '');
-  cleaned = cleaned.replace(/\bDear\s*,\s*Dear\b/gi, 'Dear');
-  cleaned = cleaned.replace(/^Dear\s+friends,?\s+Dear\s+friends,?/im, 'Dear friends,');
-
-  // 2. Remove struck-through phrase if model slipped it before replacement
-  cleaned = cleaned.replace(
-    /opinions\s+such\s+as\s+(?:on\s+)?north\s+korea,?\s+and\s+about\s+their\s+Political/i,
-    'opinions about their Political'
-  );
-
-  // 3. Preserve intentional student spelling if model inserted a missing letter
-  cleaned = cleaned.replace(/\bintellectual\b/g, 'intelletual');
-
-  return cleaned.trim();
+  return String(text)
+    .replace(/\r\n/g, '\n')
+    .replace(/^```(?:text|txt|markdown|json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/\[(?:crossed[- ]?out|struck[- ]?through|strikethrough|deleted)\]/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 function buildFilePayload(fileBuffer, mimeType, baseName) {
@@ -813,24 +863,203 @@ function buildFilePayload(fileBuffer, mimeType, baseName) {
 }
 
 /**
+ * Extracts a partially-streamed JSON string field when generation stops due to token length.
+ */
+function extractPartialJsonStringField(rawText, fieldName) {
+  const keyMatch = new RegExp(`"${fieldName}"\\s*:\\s*"`).exec(rawText);
+  if (!keyMatch) return { found: false, value: '', complete: false };
+
+  let i = keyMatch.index + keyMatch[0].length;
+  let result = '';
+  let complete = false;
+  const escapeMap = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
+
+  while (i < rawText.length) {
+    const ch = rawText[i];
+    if (ch === '\\') {
+      if (i + 1 >= rawText.length) break;
+      const next = rawText[i + 1];
+      if (next === 'u' && i + 5 < rawText.length) {
+        const hex = rawText.slice(i + 2, i + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          result += String.fromCharCode(parseInt(hex, 16));
+          i += 6;
+          continue;
+        }
+      }
+      result += escapeMap[next] ?? next;
+      i += 2;
+      continue;
+    }
+    if (ch === '"') {
+      complete = true;
+      break;
+    }
+    result += ch;
+    i += 1;
+  }
+
+  return { found: true, value: result, complete };
+}
+
+/**
+ * Parses structured OCR JSON output, gracefully falling back to plain text or truncated JSON recovery.
+ */
+export function parseTranscriptionPayload(rawText, provider, model) {
+  const cleaned = String(rawText || '').trim();
+  if (!cleaned) {
+    return { transcription: '', pagesDetected: null, anomaliesCount: 0, partialJson: false };
+  }
+
+  try {
+    const parsed = extractAndParseJson(cleaned, provider, model);
+    if (parsed && typeof parsed.transcription === 'string') {
+      return {
+        transcription: parsed.transcription,
+        pagesDetected: parsed.pages_detected ?? null,
+        anomaliesCount: Array.isArray(parsed.literal_anomalies) ? parsed.literal_anomalies.length : 0,
+        partialJson: false
+      };
+    }
+  } catch (_) {}
+
+  if (cleaned.includes('"transcription"') || /^\s*(?:```json\s*)?\{/i.test(cleaned)) {
+    const extracted = extractPartialJsonStringField(cleaned, 'transcription');
+    if (extracted.found) {
+      return {
+        transcription: extracted.value,
+        pagesDetected: null,
+        anomaliesCount: 0,
+        partialJson: !extracted.complete
+      };
+    }
+    // Truncated before reaching the "transcription" field itself
+    return { transcription: '', pagesDetected: null, anomaliesCount: 0, partialJson: true };
+  }
+
+  return { transcription: cleaned, pagesDetected: null, anomaliesCount: 0, partialJson: false };
+}
+
+/**
+ * Merges a truncated OCR draft with its continuation while deduplicating overlapping boundary words.
+ */
+export function mergeTranscriptionContinuation(existingText, continuationText) {
+  const base = String(existingText || '').trimEnd();
+  const cont = String(continuationText || '').trim();
+  if (!cont) return base;
+  if (!base) return cont;
+
+  const tailTokens = [...base.matchAll(/\S+/g)].slice(-20);
+  const headTokens = [...cont.matchAll(/\S+/g)].slice(0, 20);
+  const maxOverlap = Math.min(tailTokens.length, headTokens.length);
+
+  let overlapLen = 0;
+  for (let k = maxOverlap; k >= 1; k--) {
+    let matched = true;
+    for (let j = 0; j < k; j++) {
+      if (tailTokens[tailTokens.length - k + j][0] !== headTokens[j][0]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      overlapLen = k;
+      break;
+    }
+  }
+
+  let remainder = cont;
+  if (overlapLen > 0) {
+    const lastOverlap = headTokens[overlapLen - 1];
+    remainder = cont.slice(lastOverlap.index + lastOverlap[0].length);
+  }
+
+  const trimmedRemainder = remainder.trimStart();
+  if (!trimmedRemainder) return base;
+  if (/^[.,;:!?]/.test(trimmedRemainder)) {
+    return `${base}${trimmedRemainder}`;
+  }
+  const hasLeadingBreak = remainder.startsWith('\n\n') || cont.startsWith('\n');
+  return `${base}${hasLeadingBreak ? '\n\n' : ' '}${trimmedRemainder}`;
+}
+
+/**
  * Transcribes student handwriting from an image or scanned PDF buffer without correcting errors.
- * Uses the configured 'vision' provider/model.
+ * Uses the configured 'vision' provider/model with structured visual audit and length-cutoff recovery.
  */
 export async function transcribeHandwriting(fileBuffer, mimeType) {
   const prompt = readPromptFile(TRANSCRIPTION_PROMPT_PATH);
   const file = buildFilePayload(fileBuffer, mimeType, 'student_handwriting');
 
-  const { text } = await invokeAiModel({
+  const initialUserPrompt =
+    'Transcribe EVERY handwritten page in this upload verbatim from top to bottom following your forensic rules. Copy misspelled words, doubled/missing letters, punctuation, and mid-sentence capitals literally, omit crossed-out text, and return the complete JSON.';
+
+  const firstCall = await invokeAiModel({
     taskType: 'vision',
     operationName: 'Transcription',
     systemPrompt: prompt,
-    userPrompt: prompt,
+    userPrompt: initialUserPrompt,
     file,
+    jsonSchema: TRANSCRIPTION_JSON_SCHEMA,
+    schemaName: 'submit_transcription',
     temperature: 0.0,
-    maxOutputTokens: 4096
+    maxOutputTokens: null
   });
 
-  return sanitizeTranscription(text);
+  const parsedInitial = parseTranscriptionPayload(firstCall.text, firstCall.provider, firstCall.model);
+  if (parsedInitial.pagesDetected !== null) {
+    console.log(
+      `[AI Gateway] OCR audit: pages_detected=${parsedInitial.pagesDetected}, literal_anomalies=${parsedInitial.anomaliesCount}`
+    );
+  }
+
+  let currentText = parsedInitial.transcription || '';
+  let finishReason = firstCall.finishReason;
+  const maxContinuations = 2;
+
+  for (let attempt = 1; attempt <= maxContinuations && (isLengthTruncated(finishReason) || (parsedInitial.partialJson && !currentText.trim())); attempt++) {
+    console.warn(
+      `[AI Gateway] Transcription truncated (finish=${finishReason}, chars=${currentText.length}). Triggering continuation recovery (${attempt}/${maxContinuations})...`
+    );
+
+    const anchorTail = currentText.trim().slice(-240);
+    const continuationPrompt = anchorTail
+      ? `Your previous transcription was cut off by token length. Output ONLY the remaining verbatim handwritten text from the image starting immediately after this tail (do NOT repeat earlier paragraphs, preserve every misspelling and capitalisation literally, omit crossed-out text, output plain text only — no JSON):\n\n...${anchorTail}`
+      : 'Your previous structured OCR output was cut off before emitting text. Output ONLY the complete verbatim handwritten transcription of every page in plain text (no JSON, no autocorrection, omit crossed-out words).';
+
+    const nextCall = await invokeAiModel({
+      taskType: 'vision',
+      operationName: 'TranscriptionContinuation',
+      systemPrompt: prompt,
+      userPrompt: continuationPrompt,
+      file,
+      jsonSchema: null,
+      temperature: 0.0,
+      maxOutputTokens: null
+    });
+
+    const cleanedNext = sanitizeTranscription(nextCall.text);
+    const merged = anchorTail ? mergeTranscriptionContinuation(currentText, cleanedNext) : cleanedNext;
+    finishReason = nextCall.finishReason;
+
+    if (merged.length <= currentText.length) {
+      break;
+    }
+    currentText = merged;
+  }
+
+  if (isLengthTruncated(finishReason)) {
+    throw new AiServiceError({
+      message: `Handwriting transcription on ${PROVIDER_DISPLAY_NAMES[firstCall.provider] || firstCall.provider} (${firstCall.model}) exceeded the output token limit even after continuation recovery. Increase AI_VISION_MAX_TOKENS or lower reasoning effort in .env.`,
+      statusCode: 502,
+      code: 'TRANSCRIPTION_TRUNCATED',
+      provider: firstCall.provider,
+      model: firstCall.model,
+      taskType: 'vision'
+    });
+  }
+
+  return sanitizeTranscription(currentText);
 }
 
 /**
@@ -861,10 +1090,10 @@ Rules:
     taskType: 'vision',
     operationName: 'TaskExtraction',
     systemPrompt: taskPromptInstruction,
-    userPrompt: taskPromptInstruction,
+    userPrompt: 'Extract the complete Exercise 4 exam question verbatim as clean plain text without Markdown.',
     file,
     temperature: 0.0,
-    maxOutputTokens: 2048
+    maxOutputTokens: 4096
   });
 
   return text

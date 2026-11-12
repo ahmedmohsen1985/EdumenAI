@@ -487,7 +487,8 @@ async function callOpenAiCompatibleAdapter({
         : {
             type: 'image_url',
             image_url: {
-              url: `data:${file.mimeType};base64,${file.base64}`
+              url: `data:${file.mimeType};base64,${file.base64}`,
+              detail: 'high'
             }
           };
 

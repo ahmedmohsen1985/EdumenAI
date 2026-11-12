@@ -281,8 +281,8 @@ export const MARKING_JSON_SCHEMA = {
 };
 
 /**
- * Unified Structured JSON Schema for Two-Step Forensic OCR Transcription.
- * Forces a pre-transcription visual anomaly scan before emitting text to curb autocorrection.
+ * Unified Structured JSON Schema for Calibrated Two-Step Forensic OCR Transcription.
+ * Calibrates to the student's handwriting style before auditing genuine errors to avoid both autocorrect and phantom gibberish.
  */
 export const TRANSCRIPTION_JSON_SCHEMA = {
   type: 'object',
@@ -292,17 +292,21 @@ export const TRANSCRIPTION_JSON_SCHEMA = {
       type: 'integer',
       description: 'Total count of handwritten exam pages visible in the uploaded file.'
     },
-    literal_anomalies: {
+    writer_handwriting_profile: {
+      type: 'string',
+      description: 'Brief calibration note describing THIS writer\'s penmanship quirks observed in unambiguous words (e.g. short ascender stems, narrow closed loops, fast cursive ligatures) so messy strokes are decoded as their intended letters.'
+    },
+    genuine_spelling_errors: {
       type: 'array',
       items: { type: 'string' },
-      description: 'Visually observed non-standard spellings (extra/doubled letters, missing letters, vowel swaps) and unexpected mid-sentence capitals copied literally before transcription.'
+      description: 'ONLY unmistakable genuine spelling errors (clearly extra/doubled letters, omitted letters, wrong vowels) and unexpected mid-sentence capitals actually written by the student; never invent errors from messy cursive letterforms.'
     },
     transcription: {
       type: 'string',
-      description: 'Complete, verbatim multi-paragraph transcription of all pages from start to finish, preserving every literal spelling and capitalisation slip while omitting crossed-out text.'
+      description: 'Complete verbatim transcription across all pages, merging continuing sentences smoothly across page breaks, keeping genuine errors while decoding messy penmanship accurately and omitting crossed-out text.'
     }
   },
-  required: ['pages_detected', 'literal_anomalies', 'transcription']
+  required: ['pages_detected', 'writer_handwriting_profile', 'genuine_spelling_errors', 'transcription']
 };
 
 export function isLengthTruncated(finishReason) {
@@ -914,10 +918,15 @@ export function parseTranscriptionPayload(rawText, provider, model) {
   try {
     const parsed = extractAndParseJson(cleaned, provider, model);
     if (parsed && typeof parsed.transcription === 'string') {
+      const errorList = Array.isArray(parsed.genuine_spelling_errors)
+        ? parsed.genuine_spelling_errors
+        : Array.isArray(parsed.literal_anomalies)
+          ? parsed.literal_anomalies
+          : [];
       return {
         transcription: parsed.transcription,
         pagesDetected: parsed.pages_detected ?? null,
-        anomaliesCount: Array.isArray(parsed.literal_anomalies) ? parsed.literal_anomalies.length : 0,
+        anomaliesCount: errorList.length,
         partialJson: false
       };
     }
@@ -992,7 +1001,7 @@ export async function transcribeHandwriting(fileBuffer, mimeType) {
   const file = buildFilePayload(fileBuffer, mimeType, 'student_handwriting');
 
   const initialUserPrompt =
-    'Transcribe EVERY handwritten page in this upload verbatim from top to bottom following your forensic rules. Copy misspelled words, doubled/missing letters, punctuation, and mid-sentence capitals literally, omit crossed-out text, and return the complete JSON.';
+    'Calibrate first to THIS writer\'s handwriting style so messy strokes in normal words are recognized cleanly without creating gibberish non-words, preserve ONLY genuine spelling/capitalisation/punctuation mistakes verbatim, merge sentences seamlessly across page breaks without extra paragraph breaks, omit crossed-out text, and return the complete JSON.';
 
   const firstCall = await invokeAiModel({
     taskType: 'vision',
@@ -1009,7 +1018,7 @@ export async function transcribeHandwriting(fileBuffer, mimeType) {
   const parsedInitial = parseTranscriptionPayload(firstCall.text, firstCall.provider, firstCall.model);
   if (parsedInitial.pagesDetected !== null) {
     console.log(
-      `[AI Gateway] OCR audit: pages_detected=${parsedInitial.pagesDetected}, literal_anomalies=${parsedInitial.anomaliesCount}`
+      `[AI Gateway] OCR audit: pages_detected=${parsedInitial.pagesDetected}, genuine_spelling_errors=${parsedInitial.anomaliesCount}`
     );
   }
 

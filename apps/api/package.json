@@ -12,12 +12,12 @@
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "dev": "prisma generate && tsx watch src/index.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.prisma.json --noEmit",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy",
-    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate": "node prisma/run-prisma.mjs migrate deploy",
+    "db:migrate:dev": "node prisma/run-prisma.mjs migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio",
+    "db:studio": "node prisma/run-prisma.mjs studio",
     "lint": "eslint src --ext .ts,.js"
   },
   "dependencies": {

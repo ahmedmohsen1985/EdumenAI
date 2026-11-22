@@ -1,33 +1,36 @@
 {
-  "name": "edumenai-exercise4",
+  "name": "edumenai",
   "version": "1.0.0",
-  "description": "AI Marking Agent for Oxford AQA IGCSE ESL Exercise 4 (Article Writing)",
+  "description": "EdumenAI — AI-powered marking and learning feedback platform",
+  "private": true,
   "type": "module",
-  "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
-  },
-  "keywords": [
-    "education",
-    "ai",
-    "marking",
-    "oxford-aqa",
-    "esl",
-    "article-writing"
-  ],
-  "author": "EdumenAI / EDUMENIA",
   "license": "MIT",
+  "author": "EdumenAI / EDUMENIA",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
-  "dependencies": {
-    "@google/genai": "^2.32.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "multer": "^2.5.0",
-    "node-fetch": "^3.3.2"
+  "packageManager": "pnpm@12.21.0+sha512.66fd8278ee28935ce951792d34367ff3af5c432a2756445823029533835b8da529bbe0be5130afd56ed0713fb8789e47bad82d93bd5ae2fe54b15562d6276ef0",
+  "scripts": {
+    "build": "turbo run build",
+    "build:api": "turbo run build --filter=@edumenai/api",
+    "build:web": "turbo run build --filter=@edumenai/web",
+    "start:api": "pnpm --filter=@edumenai/api start",
+    "start:web": "pnpm --filter=@edumenai/web start",
+    "dev": "turbo run dev",
+    "dev:api": "pnpm --filter=@edumenai/api dev",
+    "dev:web": "pnpm --filter=@edumenai/web dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "typecheck:api": "pnpm --filter=@edumenai/api typecheck",
+    "typecheck:web": "pnpm --filter=@edumenai/web typecheck",
+    "db:generate": "pnpm --filter=@edumenai/api db:generate",
+    "db:migrate": "pnpm --filter=@edumenai/api db:migrate",
+    "db:migrate:dev": "pnpm --filter=@edumenai/api db:migrate:dev",
+    "db:seed": "pnpm --filter=@edumenai/api db:seed",
+    "db:studio": "pnpm --filter=@edumenai/api db:studio"
   },
-  "packageManager": "pnpm@12.21.0+sha512.66fd8278ee28935ce951792d34367ff3af5c432a2756445823029533835b8da529bbe0be5130afd56ed0713fb8789e47bad82d93bd5ae2fe54b15562d6276ef0"
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
 }

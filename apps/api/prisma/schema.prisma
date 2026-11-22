@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String             @id @default(cuid())
+  email           String?            @unique
+  name            String?
+  role            UserRole           @default(STUDENT)
+  telegramId      String?            @unique
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  submissions     Submission[]
+  providerConfigs AIProviderConfig[]
+}
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+model AIProviderConfig {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider  String
+  apiKey    String // encrypted at rest in production via application layer
+  model     String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, provider])
+}
+
+model Exercise {
+  id             String          @id @default(cuid())
+  code           String          @unique // "ex4"
+  title          String
+  description    String?
+  totalMarks     Int
+  createdAt      DateTime        @default(now())
+  promptVersions PromptVersion[]
+  submissions    Submission[]
+}
+
+model PromptVersion {
+  id                  String       @id @default(cuid())
+  exerciseId          String
+  exercise            Exercise     @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  version             Int
+  transcriptionPrompt String       @db.Text
+  evaluationPrompt    String       @db.Text
+  rubricPrompt        String       @db.Text
+  markingSchema       Json
+  isActive            Boolean      @default(false)
+  createdAt           DateTime     @default(now())
+  submissions         Submission[]
+
+  @@unique([exerciseId, version])
+  @@index([exerciseId, isActive])
+}
+
+model Submission {
+  id                String           @id @default(cuid())
+  exerciseId        String
+  exercise          Exercise         @relation(fields: [exerciseId], references: [id])
+  promptVersionId   String
+  promptVersion     PromptVersion    @relation(fields: [promptVersionId], references: [id])
+  studentId         String?
+  student           User?            @relation(fields: [studentId], references: [id])
+  studentName       String
+  studentClass      String?
+  studentSchool     String?
+  taskPrompt        String           @db.Text
+  rawText           String?          @db.Text
+  finalText         String           @db.Text
+  transcriptionMeta Json? // pages_detected, writer_handwriting_profile, genuine_spelling_errors
+  status            SubmissionStatus @default(PENDING)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  report            EvaluationReport?
+
+  @@index([exerciseId, createdAt])
+  @@index([studentId])
+}
+
+enum SubmissionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model EvaluationReport {
+  id               String   @id @default(cuid())
+  submissionId     String   @unique
+  submission       Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  marksContent     Int
+  marksContentMax  Int
+  marksLanguage    Int
+  marksLanguageMax Int
+  marksTotal       Int
+  marksTotalMax    Int
+  justification    Json
+  errors           Json
+  contentFeedback  Json
+  correctedVersion String   @db.Text
+  provider         String
+  model            String
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  latencyMs        Int?
+  createdAt        DateTime @default(now())
+}

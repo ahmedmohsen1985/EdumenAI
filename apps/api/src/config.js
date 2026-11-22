@@ -5,8 +5,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables from .env in project root
+// Load environment variables from apps/api/.env first, then monorepo root .env
 dotenv.config({ path: path.join(__dirname, '../.env') });
+dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
 export const SUPPORTED_PROVIDERS = ['google', 'openai', 'anthropic', 'openrouter'];
 
@@ -160,7 +161,7 @@ export function getGeminiApiKeys() {
 }
 
 export const config = {
-  port: Number(process.env.PORT || 3000),
+  port: Number(process.env.PORT || process.env.API_PORT || 4000),
   nodeEnv: process.env.NODE_ENV || 'development',
   aiTimeoutMs: Number(process.env.AI_TIMEOUT_MS || 120000),
   geminiApiKey: process.env.GEMINI_API_KEY || '',

@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+mark.correction {
+  background-color: #fef08a;
+  color: #1f2937;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+mark.addition {
+  background-color: #bfdbfe;
+  color: #1f2937;
+  padding: 0 2px;
+  border-radius: 2px;
+}

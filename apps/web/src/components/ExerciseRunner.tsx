@@ -45,6 +45,7 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
   const router = useRouter();
   const [exercise, setExercise] = useState<PublishedExerciseDetail | null>(null);
   const [values, setValues] = useState<BlockFormValues>({});
+  const [rawOcrTexts, setRawOcrTexts] = useState<Record<string, string>>({});
   const [meta, setMeta] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<BlockFieldErrors>({});
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -79,6 +80,14 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
 
   const setValue = useCallback((fieldKey: string, value: unknown) => {
     setValues((prev) => ({ ...prev, [fieldKey]: value }));
+    if (typeof value === 'string' && value === '') {
+      setRawOcrTexts((prev) => {
+        if (!(fieldKey in prev)) return prev;
+        const next = { ...prev };
+        delete next[fieldKey];
+        return next;
+      });
+    }
     setErrors((prev) => {
       if (!prev[fieldKey]) return prev;
       const next = { ...prev };
@@ -96,6 +105,7 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
       setSubmitError(null);
       const res = await runExerciseOcr(code, { file, promptKey });
       setValue(fieldKey, res.text);
+      setRawOcrTexts((prev) => ({ ...prev, [fieldKey]: res.text }));
       if (res.transcriptionMeta) {
         setFieldMeta(fieldKey, res.transcriptionMeta);
       }
@@ -212,7 +222,7 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
             ...(studentTelegram ? { telegram: studentTelegram } : {})
           },
           taskPrompt,
-          rawText: studentText,
+          rawText: (studentTextKey ? rawOcrTexts[studentTextKey] : undefined) || studentText,
           finalText: studentText,
           ...(transcriptionMeta ? { transcriptionMeta } : {}),
           formData: values,
@@ -235,7 +245,7 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
         setIsSubmitting(false);
       }
     },
-    [code, exercise, meta, router, values]
+    [code, exercise, meta, rawOcrTexts, router, values]
   );
 
   if (isLoading) {

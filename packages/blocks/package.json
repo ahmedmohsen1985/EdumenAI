@@ -1,0 +1,36 @@
+{
+  "name": "@edumenai/blocks",
+  "version": "1.0.0",
+  "description": "Modular Lego block plugin registry and runtime renderer for EdumenAI",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@edumenai/shared": "workspace:*",
+    "lucide-react": "^0.468.0",
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0",
+    "react-dom": ">=19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.7.2"
+  }
+}

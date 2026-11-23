@@ -15,3 +15,25 @@ mark.addition {
   padding: 0 2px;
   border-radius: 2px;
 }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  mark.correction {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-color: #fef08a !important;
+  }
+}

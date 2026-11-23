@@ -25,46 +25,105 @@ enum UserRole {
   ADMIN
 }
 
+enum ExerciseSkill {
+  WRITING
+  READING
+  LISTENING
+  SPEAKING
+}
+
+enum VersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 model AIProviderConfig {
-  id        String   @id @default(cuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider  String
-  apiKey    String // encrypted at rest in production via application layer
-  model     String?
-  isDefault Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider    String
+  apiKey      String // encrypted at rest in production via application layer
+  baseUrl     String?
+  model       String?
+  isDefault   Boolean  @default(false)
+  isEnabled   Boolean  @default(true)
+  extraConfig Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([userId, provider])
+}
+
+model AITaskRoute {
+  id              String   @id @default(cuid())
+  taskType        String   @unique // "vision" | "evaluation" | "audio"
+  provider        String
+  model           String
+  maxTokens       Int?
+  temperature     Float?
+  reasoningConfig Json?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model TelegramConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique @default("default")
+  botToken  String   // encrypted at rest via application layer
+  isEnabled Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TelegramTarget {
+  id          String   @id @default(cuid())
+  name        String
+  chatId      String
+  description String?
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, isDefault])
 }
 
 model Exercise {
   id             String          @id @default(cuid())
   code           String          @unique // "ex4"
+  skill          ExerciseSkill   @default(WRITING)
   title          String
   description    String?
   totalMarks     Int
   createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
   promptVersions PromptVersion[]
   submissions    Submission[]
 }
 
 model PromptVersion {
-  id                  String       @id @default(cuid())
+  id                  String        @id @default(cuid())
   exerciseId          String
-  exercise            Exercise     @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  exercise            Exercise      @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
   version             Int
-  transcriptionPrompt String       @db.Text
-  evaluationPrompt    String       @db.Text
-  rubricPrompt        String       @db.Text
+  status              VersionStatus @default(PUBLISHED)
+  transcriptionPrompt String        @db.Text
+  evaluationPrompt    String        @db.Text
+  rubricPrompt        String        @db.Text
   markingSchema       Json
-  isActive            Boolean      @default(false)
-  createdAt           DateTime     @default(now())
+  templateSchema      Json?
+  promptEntries       Json?
+  isActive            Boolean       @default(false)
+  publishedAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @default(now()) @updatedAt
   submissions         Submission[]
 
   @@unique([exerciseId, version])
   @@index([exerciseId, isActive])
+  @@index([exerciseId, status])
 }
 
 model Submission {
@@ -82,6 +141,8 @@ model Submission {
   rawText           String?          @db.Text
   finalText         String           @db.Text
   transcriptionMeta Json? // pages_detected, writer_handwriting_profile, genuine_spelling_errors
+  isPreview         Boolean          @default(false)
+  formData          Json?
   status            SubmissionStatus @default(PENDING)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -89,6 +150,7 @@ model Submission {
 
   @@index([exerciseId, createdAt])
   @@index([studentId])
+  @@index([isPreview, createdAt])
 }
 
 enum SubmissionStatus {

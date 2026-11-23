@@ -4,7 +4,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { PrismaClient, type Prisma } from '@prisma/client';
-import { MARKING_JSON_SCHEMA } from '@edumenai/shared';
+import {
+  DEFAULT_EX4_TEMPLATE,
+  EX4_TASK_EXTRACTION_PROMPT,
+  MARKING_JSON_SCHEMA,
+  PromptEntrySchema,
+  TemplateSchema,
+  TRANSCRIPTION_JSON_SCHEMA
+} from '@edumenai/shared';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,6 +21,7 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
 const EXERCISE_CODE = 'ex4';
+const EXERCISE_SKILL = 'WRITING' as const;
 const EXERCISE_TITLE = 'Exercise 4 — Article Writing';
 const EXERCISE_DESCRIPTION =
   'Oxford AQA IGCSE ESL Exercise 4: Article Writing (100–150 words, 23 marks total: Content & Communication 8, Language 15).';
@@ -68,6 +76,41 @@ async function main(): Promise<void> {
   validateMarkingSchema(MARKING_JSON_SCHEMA);
   const markingSchema = MARKING_JSON_SCHEMA as unknown as Prisma.InputJsonValue;
 
+  const validatedTemplate = TemplateSchema.parse(DEFAULT_EX4_TEMPLATE);
+  const validatedPromptEntries = [
+    PromptEntrySchema.parse({
+      key: 'task_extraction_prompt',
+      label: 'Task Question OCR Prompt',
+      taskType: 'vision',
+      content: EX4_TASK_EXTRACTION_PROMPT,
+      outputSchema: null
+    }),
+    PromptEntrySchema.parse({
+      key: 'transcription_prompt',
+      label: 'Forensic Handwriting OCR Prompt',
+      taskType: 'vision',
+      content: transcriptionPrompt,
+      outputSchema: TRANSCRIPTION_JSON_SCHEMA
+    }),
+    PromptEntrySchema.parse({
+      key: 'marking_protocol',
+      label: 'Core Marking Protocol',
+      taskType: 'evaluation',
+      content: evaluationPrompt,
+      outputSchema: MARKING_JSON_SCHEMA
+    }),
+    PromptEntrySchema.parse({
+      key: 'rubric_and_anchors',
+      label: 'Exercise 4 Rubric & Anchors',
+      taskType: 'evaluation',
+      content: rubricPrompt,
+      outputSchema: null
+    })
+  ];
+
+  const templateSchemaJson = validatedTemplate as unknown as Prisma.InputJsonValue;
+  const promptEntriesJson = validatedPromptEntries as unknown as Prisma.InputJsonValue;
+
   if (isDryRun) {
     const schemaObj = MARKING_JSON_SCHEMA as {
       properties?: Record<string, unknown>;
@@ -77,9 +120,12 @@ async function main(): Promise<void> {
       dryRun: true,
       exercise: {
         code: EXERCISE_CODE,
+        skill: EXERCISE_SKILL,
         title: EXERCISE_TITLE,
         totalMarks: EXERCISE_TOTAL_MARKS
       },
+      promptEntriesCount: validatedPromptEntries.length,
+      templateBlockCount: validatedTemplate.blocks.length,
       prompts: {
         transcriptionPrompt: {
           file: PROMPT_FILES.transcriptionPrompt,
@@ -117,56 +163,81 @@ async function main(): Promise<void> {
   const prisma = new PrismaClient();
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const exercise = await tx.exercise.upsert({
-        where: { code: EXERCISE_CODE },
-        create: {
-          code: EXERCISE_CODE,
-          title: EXERCISE_TITLE,
-          description: EXERCISE_DESCRIPTION,
-          totalMarks: EXERCISE_TOTAL_MARKS
-        },
-        update: {
-          title: EXERCISE_TITLE,
-          description: EXERCISE_DESCRIPTION,
-          totalMarks: EXERCISE_TOTAL_MARKS
-        }
-      });
-
-      const activeCount = await tx.promptVersion.count({
-        where: { exerciseId: exercise.id, isActive: true }
-      });
-
-      const promptVersion = await tx.promptVersion.upsert({
-        where: {
-          exerciseId_version: {
-            exerciseId: exercise.id,
-            version: 1
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const exercise = await tx.exercise.upsert({
+          where: { code: EXERCISE_CODE },
+          create: {
+            code: EXERCISE_CODE,
+            skill: EXERCISE_SKILL,
+            title: EXERCISE_TITLE,
+            description: EXERCISE_DESCRIPTION,
+            totalMarks: EXERCISE_TOTAL_MARKS
+          },
+          update: {
+            skill: EXERCISE_SKILL,
+            title: EXERCISE_TITLE,
+            description: EXERCISE_DESCRIPTION,
+            totalMarks: EXERCISE_TOTAL_MARKS
           }
-        },
-        create: {
-          exerciseId: exercise.id,
-          version: 1,
-          transcriptionPrompt,
-          evaluationPrompt,
-          rubricPrompt,
-          markingSchema,
-          isActive: activeCount === 0
-        },
-        update: {
-          transcriptionPrompt,
-          evaluationPrompt,
-          rubricPrompt,
-          markingSchema,
-          ...(activeCount === 0 ? { isActive: true } : {})
-        }
-      });
+        });
 
-      return { exercise, promptVersion, activeCount };
-    });
+        const activeCount = await tx.promptVersion.count({
+          where: { exerciseId: exercise.id, isActive: true }
+        });
+
+        const existingV1 = await tx.promptVersion.findUnique({
+          where: {
+            exerciseId_version: {
+              exerciseId: exercise.id,
+              version: 1
+            }
+          },
+          select: { publishedAt: true }
+        });
+
+        const publishedAt = existingV1?.publishedAt ?? new Date();
+
+        const promptVersion = await tx.promptVersion.upsert({
+          where: {
+            exerciseId_version: {
+              exerciseId: exercise.id,
+              version: 1
+            }
+          },
+          create: {
+            exerciseId: exercise.id,
+            version: 1,
+            status: 'PUBLISHED',
+            transcriptionPrompt,
+            evaluationPrompt,
+            rubricPrompt,
+            markingSchema,
+            templateSchema: templateSchemaJson,
+            promptEntries: promptEntriesJson,
+            isActive: activeCount === 0,
+            publishedAt
+          },
+          update: {
+            status: 'PUBLISHED',
+            transcriptionPrompt,
+            evaluationPrompt,
+            rubricPrompt,
+            markingSchema,
+            templateSchema: templateSchemaJson,
+            promptEntries: promptEntriesJson,
+            publishedAt,
+            ...(activeCount === 0 ? { isActive: true } : {})
+          }
+        });
+
+        return { exercise, promptVersion, activeCount };
+      },
+      { maxWait: 15000, timeout: 30000 }
+    );
 
     console.log(
-      `Seeded Exercise "${result.exercise.code}" (id=${result.exercise.id}) and PromptVersion v${result.promptVersion.version} (id=${result.promptVersion.id}, isActive=${result.promptVersion.isActive}).`
+      `Seeded Exercise "${result.exercise.code}" (id=${result.exercise.id}, skill=${result.exercise.skill}) and PromptVersion v${result.promptVersion.version} (id=${result.promptVersion.id}, status=${result.promptVersion.status}, isActive=${result.promptVersion.isActive}).`
     );
   } finally {
     await prisma.$disconnect();

@@ -25,7 +25,13 @@ export function getApiBaseUrl(): string {
       'http://localhost:4000'
     );
   }
-  return process.env.NEXT_PUBLIC_API_URL || '';
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return `${window.location.protocol}//${window.location.hostname}:4000`;
+  }
+  return '';
 }
 
 export function getApiUrl(path: string): string {

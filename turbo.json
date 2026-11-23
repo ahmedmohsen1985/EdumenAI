@@ -4,11 +4,13 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build", "db:generate"],
+      "env": ["NEXT_PUBLIC_API_URL"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["NEXT_PUBLIC_API_URL", "API_INTERNAL_URL", "API_PORT", "WEB_PORT", "PORT"]
     },
     "start": {
       "cache": false,

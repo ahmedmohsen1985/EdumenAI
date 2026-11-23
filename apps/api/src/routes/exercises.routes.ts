@@ -68,7 +68,8 @@ function handleRouteAiError(
   err: unknown,
   operationLabel: string,
   fallbackMessage: string,
-  studentInfo?: StudentInfo
+  studentInfo?: StudentInfo,
+  exerciseTitle?: string
 ): void {
   logger.error({ err, operationLabel }, 'AI route execution failed');
 
@@ -92,7 +93,7 @@ function handleRouteAiError(
       logger.error({ err: notifyErr, operationLabel }, 'Teacher quota alert failed');
     });
   } else if (studentInfo) {
-    void sendTeacherError(studentInfo, message).catch((notifyErr: unknown) => {
+    void sendTeacherError(studentInfo, message, exerciseTitle).catch((notifyErr: unknown) => {
       logger.error({ err: notifyErr, operationLabel }, 'Teacher error notification failed');
     });
   }
@@ -233,11 +234,14 @@ router.post(
       return;
     }
 
+    let resolvedExerciseTitle: string | undefined;
+
     try {
       const resolved = await resolveVersionForExecution(code, {
         versionId: parsedBody.versionId,
         allowDraft: authorized
       });
+      resolvedExerciseTitle = resolved.exercise.title;
 
       const requestedKeys = parsedBody.promptKeys;
       const evalEntries =
@@ -257,12 +261,31 @@ router.post(
           : undefined;
       const markingSchema = entrySchema ?? versionSchema;
 
+      const evalBlock = resolved.templateSchema.blocks.find(
+        (b) => b.type === 'examiner_evaluation'
+      );
+      const evalProps = (evalBlock?.props ?? {}) as Record<string, unknown>;
+      const toPosInt = (v: unknown): number | undefined => {
+        const n = Number(v);
+        return Number.isFinite(n) && n >= 1 ? Math.floor(n) : undefined;
+      };
+      const contentMax = toPosInt(evalProps.contentMax);
+      const languageMax = toPosInt(evalProps.languageMax);
+      const evalTotal = toPosInt(evalProps.totalMarks);
+      const totalMax = evalTotal ?? resolved.exercise.totalMarks;
+      const marksLimits = {
+        ...(contentMax !== undefined ? { contentMax } : {}),
+        ...(languageMax !== undefined ? { languageMax } : {}),
+        totalMax
+      };
+
       const evaluationResult = await evaluateArticle({
         studentName: parsedBody.student.name,
         taskPrompt: parsedBody.taskPrompt,
         studentText: parsedBody.finalText,
         ...(systemPrompts.length > 0 ? { systemPrompts } : {}),
-        ...(markingSchema ? { markingSchema } : {})
+        ...(markingSchema ? { markingSchema } : {}),
+        marksLimits
       });
 
       const persisted = await createEvaluatedSubmission({
@@ -285,7 +308,8 @@ router.post(
               await notifyStudent(
                 parsedBody.student.telegram,
                 parsedBody.student.name,
-                evaluationResult.report
+                evaluationResult.report,
+                resolved.exercise.title
               );
             }
             await sendTeacherAudit(
@@ -293,7 +317,8 @@ router.post(
               parsedBody.rawText ?? '',
               parsedBody.finalText,
               evaluationResult.report,
-              parsedBody.telegramTargetIds
+              parsedBody.telegramTargetIds,
+              resolved.exercise.title
             );
           } catch (notifyErr: unknown) {
             logger.error({ err: notifyErr, code }, 'Post-evaluation Telegram notification failed');
@@ -320,7 +345,8 @@ router.post(
           err,
           `Exercise Evaluation (/exercises/${code}/evaluate)`,
           'Evaluation failed.',
-          isPreview ? undefined : parsedBody.student
+          isPreview ? undefined : parsedBody.student,
+          resolvedExerciseTitle
         );
         return;
       }

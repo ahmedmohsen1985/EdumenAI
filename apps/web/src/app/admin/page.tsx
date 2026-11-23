@@ -14,21 +14,38 @@ import {
   Sparkles
 } from 'lucide-react';
 import {
+  ADMIN_EXERCISES_CACHE_KEYS,
   fetchAdminExercises,
   fetchAdminPlatformStats,
   type AdminExerciseSummary,
   type AdminPlatformStats
 } from '../../lib/admin-exercises-api';
+import { getCached, isCacheFresh } from '../../lib/client-cache';
 
 export default function AdminOverviewPage(): React.ReactElement {
-  const [exercises, setExercises] = useState<AdminExerciseSummary[]>([]);
-  const [stats, setStats] = useState<AdminPlatformStats | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const cachedExercises = getCached<AdminExerciseSummary[]>(ADMIN_EXERCISES_CACHE_KEYS.exercises);
+  const cachedStats = getCached<AdminPlatformStats>(ADMIN_EXERCISES_CACHE_KEYS.stats);
+  const hasBothCached = cachedExercises !== null && cachedStats !== null;
+
+  const [exercises, setExercises] = useState<AdminExerciseSummary[]>(cachedExercises ?? []);
+  const [stats, setStats] = useState<AdminPlatformStats | null>(cachedStats);
+  const [isLoading, setIsLoading] = useState<boolean>(!hasBothCached);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const fresh =
+      hasBothCached &&
+      isCacheFresh(ADMIN_EXERCISES_CACHE_KEYS.exercises, 30_000) &&
+      isCacheFresh(ADMIN_EXERCISES_CACHE_KEYS.stats, 30_000);
+    if (fresh) {
+      setIsLoading(false);
+      return;
+    }
+
     let cancelled = false;
-    setIsLoading(true);
+    if (!hasBothCached) {
+      setIsLoading(true);
+    }
     setError(null);
 
     void Promise.all([fetchAdminExercises(), fetchAdminPlatformStats()])
@@ -38,7 +55,7 @@ export default function AdminOverviewPage(): React.ReactElement {
         setStats(platformStats);
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && !hasBothCached) {
           setError(err instanceof Error ? err.message : 'Failed to load admin overview.');
         }
       })
@@ -49,7 +66,7 @@ export default function AdminOverviewPage(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hasBothCached]);
 
   if (isLoading) {
     return (

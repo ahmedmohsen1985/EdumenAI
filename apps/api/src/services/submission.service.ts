@@ -87,6 +87,7 @@ function mapReportToPersisted(record: ReportWithRelations): PersistedReport {
     id: record.id,
     submissionId: submission.id,
     exerciseCode: submission.exercise.code,
+    exerciseTitle: submission.exercise.title,
     promptVersion: submission.promptVersion.version,
     studentName: submission.studentName,
     studentClass: submission.studentClass,

@@ -12,6 +12,7 @@ import {
   type TemplateConfig
 } from '@edumenai/shared';
 import { prisma, TX_OPTIONS } from '../lib/prisma.js';
+import { appCache } from '../lib/cache.js';
 
 export class HttpError extends Error {
   public readonly statusCode: number;
@@ -233,152 +234,114 @@ function mapAdminVersion(version: PromptVersion, code: string): AdminPromptVersi
   };
 }
 
-function buildDefaultTemplateForNewExercise(title: string, totalMarks: number): TemplateConfig {
+function buildDefaultTemplateForNewExercise(_title: string, _totalMarks: number): TemplateConfig {
   return TemplateSchema.parse({
     schemaVersion: 1,
     settings: {
       showHeaderBadges: true,
-      badges: [title, `${totalMarks} Marks`, 'AI Marker'],
+      badges: [],
       submitRedirectMode: 'report_page'
     },
-    blocks: [
-      {
-        id: 'student_name',
-        type: 'input',
-        fieldKey: 'student_name',
-        label: 'Full Name',
-        section: 'Student Identity',
-        order: 0,
-        width: 'full',
-        required: true,
-        props: { placeholder: 'e.g. Ahmed Hassan' }
-      },
-      {
-        id: 'task_question',
-        type: 'textarea',
-        fieldKey: 'task_question',
-        label: 'Task Prompt',
-        section: 'Task',
-        order: 1,
-        width: 'full',
-        required: true,
-        props: { placeholder: 'Enter the task prompt...' }
-      },
-      {
-        id: 'student_response',
-        type: 'textarea',
-        fieldKey: 'student_article',
-        label: 'Student Response',
-        section: 'Response',
-        order: 2,
-        width: 'full',
-        required: true,
-        props: { placeholder: 'Enter or paste student response...' }
-      }
-    ]
+    blocks: []
   });
 }
 
 function buildDefaultPromptEntriesForNewExercise(): PromptEntry[] {
-  return [
-    PromptEntrySchema.parse({
-      key: 'marking_protocol',
-      label: 'Core Marking Protocol',
-      taskType: 'evaluation',
-      content: 'Evaluate the student response against the task prompt and return structured feedback.',
-      outputSchema: MARKING_JSON_SCHEMA as unknown as Record<string, unknown>
-    })
-  ];
+  return [];
 }
 
 export async function listPublishedExercises(): Promise<PublishedExerciseSummary[]> {
-  const exercises = await prisma.exercise.findMany({
-    where: {
-      promptVersions: {
-        some: {
-          status: 'PUBLISHED',
-          isActive: true
+  return appCache.getOrSet('exercises:published:list', async () => {
+    const exercises = await prisma.exercise.findMany({
+      where: {
+        promptVersions: {
+          some: {
+            status: 'PUBLISHED',
+            isActive: true
+          }
         }
-      }
-    },
-    include: {
-      promptVersions: {
-        where: {
-          status: 'PUBLISHED',
-          isActive: true
-        },
-        orderBy: { version: 'desc' },
-        take: 1
-      }
-    },
-    orderBy: { createdAt: 'asc' }
-  });
-
-  return exercises
-    .filter((ex) => ex.promptVersions.length > 0)
-    .map((ex) => {
-      const active = ex.promptVersions[0]!;
-      return {
-        id: ex.id,
-        code: ex.code,
-        skill: ex.skill,
-        title: ex.title,
-        description: ex.description,
-        totalMarks: ex.totalMarks,
-        activeVersion: {
-          id: active.id,
-          version: active.version,
-          publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
+      },
+      include: {
+        promptVersions: {
+          where: {
+            status: 'PUBLISHED',
+            isActive: true
+          },
+          orderBy: { version: 'desc' },
+          take: 1
         }
-      };
+      },
+      orderBy: { createdAt: 'asc' }
     });
+
+    return exercises
+      .filter((ex) => ex.promptVersions.length > 0)
+      .map((ex) => {
+        const active = ex.promptVersions[0]!;
+        return {
+          id: ex.id,
+          code: ex.code,
+          skill: ex.skill,
+          title: ex.title,
+          description: ex.description,
+          totalMarks: ex.totalMarks,
+          activeVersion: {
+            id: active.id,
+            version: active.version,
+            publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
+          }
+        };
+      });
+  });
 }
 
 export async function getPublishedExerciseByCode(code: string): Promise<PublishedExerciseDetail> {
-  const exercise = await prisma.exercise.findUnique({
-    where: { code },
-    include: {
-      promptVersions: {
-        where: {
-          status: 'PUBLISHED',
-          isActive: true
-        },
-        orderBy: { version: 'desc' },
-        take: 1
+  return appCache.getOrSet(`exercises:published:code:${code}`, async () => {
+    const exercise = await prisma.exercise.findUnique({
+      where: { code },
+      include: {
+        promptVersions: {
+          where: {
+            status: 'PUBLISHED',
+            isActive: true
+          },
+          orderBy: { version: 'desc' },
+          take: 1
+        }
       }
+    });
+
+    if (!exercise || exercise.promptVersions.length === 0) {
+      throw new HttpError(404, `Published exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
     }
+
+    const active = exercise.promptVersions[0]!;
+    const templateSchema = parseTemplateSchema(active.templateSchema, exercise.code);
+    const promptEntries = parsePromptEntries(active);
+
+    const promptMeta: PublicPromptMeta[] = promptEntries.map((entry) => ({
+      key: entry.key,
+      label: entry.label,
+      ...(entry.description ? { description: entry.description } : {}),
+      taskType: entry.taskType
+    }));
+
+    return {
+      id: exercise.id,
+      code: exercise.code,
+      skill: exercise.skill,
+      title: exercise.title,
+      description: exercise.description,
+      totalMarks: exercise.totalMarks,
+      activeVersion: {
+        id: active.id,
+        version: active.version,
+        publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
+      },
+      templateSchema,
+      promptMeta
+    };
   });
-
-  if (!exercise || exercise.promptVersions.length === 0) {
-    throw new HttpError(404, `Published exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
-  }
-
-  const active = exercise.promptVersions[0]!;
-  const templateSchema = parseTemplateSchema(active.templateSchema, exercise.code);
-  const promptEntries = parsePromptEntries(active);
-
-  const promptMeta: PublicPromptMeta[] = promptEntries.map((entry) => ({
-    key: entry.key,
-    label: entry.label,
-    ...(entry.description ? { description: entry.description } : {}),
-    taskType: entry.taskType
-  }));
-
-  return {
-    id: exercise.id,
-    code: exercise.code,
-    skill: exercise.skill,
-    title: exercise.title,
-    description: exercise.description,
-    totalMarks: exercise.totalMarks,
-    activeVersion: {
-      id: active.id,
-      version: active.version,
-      publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
-    },
-    templateSchema,
-    promptMeta
-  };
 }
 
 export async function resolveVersionForExecution(
@@ -446,44 +409,46 @@ export async function resolveVersionForExecution(
 }
 
 export async function listAllExercisesAdmin(): Promise<AdminExerciseSummary[]> {
-  const exercises = await prisma.exercise.findMany({
-    include: {
-      promptVersions: {
-        orderBy: { version: 'desc' }
-      }
-    },
-    orderBy: { createdAt: 'asc' }
-  });
+  return appCache.getOrSet('exercises:admin:list', async () => {
+    const exercises = await prisma.exercise.findMany({
+      include: {
+        promptVersions: {
+          orderBy: { version: 'desc' }
+        }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
 
-  return exercises.map((ex) => {
-    const active = ex.promptVersions.find((v) => v.status === 'PUBLISHED' && v.isActive) ?? null;
-    const latestDraft = ex.promptVersions.find((v) => v.status === 'DRAFT') ?? null;
+    return exercises.map((ex) => {
+      const active = ex.promptVersions.find((v) => v.status === 'PUBLISHED' && v.isActive) ?? null;
+      const latestDraft = ex.promptVersions.find((v) => v.status === 'DRAFT') ?? null;
 
-    return {
-      id: ex.id,
-      code: ex.code,
-      skill: ex.skill,
-      title: ex.title,
-      description: ex.description,
-      totalMarks: ex.totalMarks,
-      versionCount: ex.promptVersions.length,
-      activeVersion: active
-        ? {
-            id: active.id,
-            version: active.version,
-            publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
-          }
-        : null,
-      latestDraft: latestDraft
-        ? {
-            id: latestDraft.id,
-            version: latestDraft.version,
-            updatedAt: latestDraft.updatedAt.toISOString()
-          }
-        : null,
-      createdAt: ex.createdAt.toISOString(),
-      updatedAt: ex.updatedAt.toISOString()
-    };
+      return {
+        id: ex.id,
+        code: ex.code,
+        skill: ex.skill,
+        title: ex.title,
+        description: ex.description,
+        totalMarks: ex.totalMarks,
+        versionCount: ex.promptVersions.length,
+        activeVersion: active
+          ? {
+              id: active.id,
+              version: active.version,
+              publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
+            }
+          : null,
+        latestDraft: latestDraft
+          ? {
+              id: latestDraft.id,
+              version: latestDraft.version,
+              updatedAt: latestDraft.updatedAt.toISOString()
+            }
+          : null,
+        createdAt: ex.createdAt.toISOString(),
+        updatedAt: ex.updatedAt.toISOString()
+      };
+    });
   });
 }
 
@@ -525,6 +490,8 @@ export async function createExerciseAdmin(
     return { exercise, versions: [draftVersion] };
   }, TX_OPTIONS);
 
+  appCache.delPrefix('exercises:');
+
   return {
     id: created.exercise.id,
     code: created.exercise.code,
@@ -539,30 +506,32 @@ export async function createExerciseAdmin(
 }
 
 export async function getExerciseAdmin(code: string): Promise<AdminExerciseDetail> {
-  const exercise = await prisma.exercise.findUnique({
-    where: { code },
-    include: {
-      promptVersions: {
-        orderBy: { version: 'desc' }
+  return appCache.getOrSet(`exercises:admin:code:${code}`, async () => {
+    const exercise = await prisma.exercise.findUnique({
+      where: { code },
+      include: {
+        promptVersions: {
+          orderBy: { version: 'desc' }
+        }
       }
+    });
+
+    if (!exercise) {
+      throw new HttpError(404, `Exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
     }
+
+    return {
+      id: exercise.id,
+      code: exercise.code,
+      skill: exercise.skill,
+      title: exercise.title,
+      description: exercise.description,
+      totalMarks: exercise.totalMarks,
+      createdAt: exercise.createdAt.toISOString(),
+      updatedAt: exercise.updatedAt.toISOString(),
+      versions: exercise.promptVersions.map((v) => mapAdminVersion(v, exercise.code))
+    };
   });
-
-  if (!exercise) {
-    throw new HttpError(404, `Exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
-  }
-
-  return {
-    id: exercise.id,
-    code: exercise.code,
-    skill: exercise.skill,
-    title: exercise.title,
-    description: exercise.description,
-    totalMarks: exercise.totalMarks,
-    createdAt: exercise.createdAt.toISOString(),
-    updatedAt: exercise.updatedAt.toISOString(),
-    versions: exercise.promptVersions.map((v) => mapAdminVersion(v, exercise.code))
-  };
 }
 
 export async function saveExerciseDraftAdmin(
@@ -685,6 +654,8 @@ export async function saveExerciseDraftAdmin(
     return { refreshed, draftVersion };
   }, TX_OPTIONS);
 
+  appCache.delPrefix('exercises:');
+
   return {
     exercise: {
       id: result.refreshed.id,
@@ -778,6 +749,8 @@ export async function publishExerciseAdmin(
 
     return { refreshed, published };
   }, TX_OPTIONS);
+
+  appCache.delPrefix('exercises:');
 
   return {
     exercise: {

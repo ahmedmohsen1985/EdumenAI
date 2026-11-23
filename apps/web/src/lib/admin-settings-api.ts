@@ -12,6 +12,12 @@ import type {
   UpsertTelegramConfig
 } from '@edumenai/shared';
 import { adminFetch } from './admin-auth';
+import { fetchWithCache, invalidateCache } from './client-cache';
+
+export const ADMIN_SETTINGS_CACHE_KEYS = {
+  ai: 'admin:ai',
+  telegram: 'admin:telegram'
+} as const;
 
 export interface AiSettingsData {
   providers: AiProviderConfigView[];
@@ -38,11 +44,17 @@ export interface TelegramTestMessageResult {
   error?: string;
 }
 
-export async function fetchAiSettings(): Promise<AiSettingsData> {
-  const res = await adminFetch<{ success: true; data: AiSettingsData }>(
-    '/api/admin/settings/ai'
+export async function fetchAiSettings(options?: { force?: boolean }): Promise<AiSettingsData> {
+  return fetchWithCache(
+    ADMIN_SETTINGS_CACHE_KEYS.ai,
+    async () => {
+      const res = await adminFetch<{ success: true; data: AiSettingsData }>(
+        '/api/admin/settings/ai'
+      );
+      return res.data;
+    },
+    { ttlMs: 30_000, force: options?.force }
   );
-  return res.data;
 }
 
 export async function saveAiProviderConfig(
@@ -56,6 +68,8 @@ export async function saveAiProviderConfig(
       body: JSON.stringify(input)
     }
   );
+  invalidateCache('admin:ai');
+  invalidateCache('admin:stats');
   return res.data;
 }
 
@@ -83,6 +97,8 @@ export async function saveAiTaskRoute(
       body: JSON.stringify(input)
     }
   );
+  invalidateCache('admin:ai');
+  invalidateCache('admin:stats');
   return res.data;
 }
 
@@ -95,14 +111,24 @@ export async function resetAiTaskRoute(
   }>(`/api/admin/settings/ai/routes/${encodeURIComponent(taskType)}`, {
     method: 'DELETE'
   });
+  invalidateCache('admin:ai');
+  invalidateCache('admin:stats');
   return res.data;
 }
 
-export async function fetchTelegramSettings(): Promise<TelegramSettingsData> {
-  const res = await adminFetch<{ success: true; data: TelegramSettingsData }>(
-    '/api/admin/settings/telegram'
+export async function fetchTelegramSettings(options?: {
+  force?: boolean;
+}): Promise<TelegramSettingsData> {
+  return fetchWithCache(
+    ADMIN_SETTINGS_CACHE_KEYS.telegram,
+    async () => {
+      const res = await adminFetch<{ success: true; data: TelegramSettingsData }>(
+        '/api/admin/settings/telegram'
+      );
+      return res.data;
+    },
+    { ttlMs: 30_000, force: options?.force }
   );
-  return res.data;
 }
 
 export async function saveTelegramConfig(
@@ -115,6 +141,8 @@ export async function saveTelegramConfig(
       body: JSON.stringify(input)
     }
   );
+  invalidateCache('admin:telegram');
+  invalidateCache('admin:stats');
   return res.data;
 }
 
@@ -128,6 +156,8 @@ export async function createTelegramTarget(
       body: JSON.stringify(input)
     }
   );
+  invalidateCache('admin:telegram');
+  invalidateCache('admin:stats');
   return res.data;
 }
 
@@ -142,6 +172,8 @@ export async function updateTelegramTarget(
       body: JSON.stringify(input)
     }
   );
+  invalidateCache('admin:telegram');
+  invalidateCache('admin:stats');
   return res.data;
 }
 
@@ -154,6 +186,8 @@ export async function deleteTelegramTarget(
   }>(`/api/admin/settings/telegram/targets/${encodeURIComponent(id)}`, {
     method: 'DELETE'
   });
+  invalidateCache('admin:telegram');
+  invalidateCache('admin:stats');
   return res.data;
 }
 

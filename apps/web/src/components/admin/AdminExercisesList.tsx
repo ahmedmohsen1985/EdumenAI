@@ -16,10 +16,12 @@ import {
   X
 } from 'lucide-react';
 import {
+  ADMIN_EXERCISES_CACHE_KEYS,
   createAdminExercise,
   fetchAdminExercises,
   type AdminExerciseSummary
 } from '../../lib/admin-exercises-api';
+import { getCached, isCacheFresh } from '../../lib/client-cache';
 
 type SkillFilter = 'ALL' | ExerciseSkill;
 
@@ -42,9 +44,10 @@ function slugifyTitle(title: string): string {
 
 export function AdminExercisesList(): React.ReactElement {
   const router = useRouter();
-  const [exercises, setExercises] = useState<AdminExerciseSummary[]>([]);
+  const cachedExercises = getCached<AdminExerciseSummary[]>(ADMIN_EXERCISES_CACHE_KEYS.exercises);
+  const [exercises, setExercises] = useState<AdminExerciseSummary[]>(cachedExercises ?? []);
   const [skillFilter, setSkillFilter] = useState<SkillFilter>('ALL');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(cachedExercises === null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Create Exercise modal state
@@ -58,21 +61,32 @@ export function AdminExercisesList(): React.ReactElement {
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState<boolean>(false);
 
-  const loadExercises = async (): Promise<void> => {
-    setIsLoading(true);
+  const loadExercises = async (options?: { silent?: boolean; force?: boolean }): Promise<void> => {
+    if (!options?.silent) {
+      setIsLoading(true);
+    }
     setLoadError(null);
     try {
-      const list = await fetchAdminExercises();
+      const list = await fetchAdminExercises({ force: options?.force });
       setExercises(list);
     } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load exercises.');
+      if (!options?.silent) {
+        setLoadError(err instanceof Error ? err.message : 'Failed to load exercises.');
+      }
     } finally {
-      setIsLoading(false);
+      if (!options?.silent) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    void loadExercises();
+    const cached = getCached<AdminExerciseSummary[]>(ADMIN_EXERCISES_CACHE_KEYS.exercises);
+    if (cached && isCacheFresh(ADMIN_EXERCISES_CACHE_KEYS.exercises, 30_000)) {
+      setIsLoading(false);
+      return;
+    }
+    void loadExercises({ silent: cached !== null });
   }, []);
 
   const filteredExercises = useMemo(() => {
@@ -246,23 +260,26 @@ export function AdminExercisesList(): React.ReactElement {
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-md bg-brand-navy px-2.5 py-0.5 text-xs font-bold uppercase text-brand-gold">
+                    <span className="rounded-md bg-brand-navy px-2.5 py-0.5 text-xs font-bold uppercase text-brand-gold whitespace-nowrap shrink-0">
                       {ex.skill}
                     </span>
-                    <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                      {ex.code}
-                    </span>
-                    <span className="rounded-md bg-brand-cream px-2 py-0.5 text-xs font-semibold text-brand-navy border border-brand-gold/30">
+                    <span className="rounded-md bg-brand-cream px-2 py-0.5 text-xs font-semibold text-brand-navy border border-brand-gold/30 whitespace-nowrap shrink-0">
                       {ex.totalMarks} Marks
                     </span>
                   </div>
 
-                  <span className="text-xs font-medium text-slate-500">
+                  <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
                     {ex.versionCount} {ex.versionCount === 1 ? 'version' : 'versions'}
                   </span>
                 </div>
 
                 <h2 className="mt-3 text-lg font-bold text-brand-navy">{ex.title}</h2>
+                <p
+                  className="mt-0.5 truncate font-mono text-xs text-slate-400"
+                  title={ex.code}
+                >
+                  /exercises/{ex.code}
+                </p>
                 {ex.description && (
                   <p className="mt-1 line-clamp-2 text-sm text-slate-600">{ex.description}</p>
                 )}

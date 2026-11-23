@@ -13,6 +13,7 @@ import {
 import { decryptSecret, encryptSecret, maskSecret } from '../lib/crypto.js';
 import { logger } from '../lib/logger.js';
 import { prisma, TX_OPTIONS } from '../lib/prisma.js';
+import { appCache } from '../lib/cache.js';
 
 export const SUPPORTED_PROVIDERS: readonly AiProviderId[] = [
   'google',
@@ -197,6 +198,43 @@ function toJsonRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+export function resolveEnvReasoningConfig(
+  provider: AiProviderId,
+  taskType: AiTaskType
+): Record<string, unknown> | null {
+  if (taskType === 'audio') {
+    return null;
+  }
+
+  let raw = '';
+  if (provider === 'openrouter') {
+    raw =
+      (taskType === 'vision'
+        ? process.env.OPENROUTER_VISION_REASONING
+        : process.env.OPENROUTER_EVAL_REASONING) || '';
+  } else if (provider === 'google') {
+    raw =
+      (taskType === 'vision'
+        ? process.env.GEMINI_VISION_THINKING_LEVEL
+        : process.env.GEMINI_EVAL_THINKING_LEVEL) || '';
+  } else if (provider === 'openai') {
+    raw =
+      (taskType === 'vision'
+        ? process.env.OPENAI_VISION_REASONING
+        : process.env.OPENAI_EVAL_REASONING) || '';
+  }
+
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return {
+    effort: trimmed.toLowerCase(),
+    thinkingLevel: trimmed.toUpperCase()
+  };
+}
+
 async function resolveProviderCredentials(provider: AiProviderId): Promise<{
   apiKey: string;
   envVarName: string;
@@ -262,48 +300,55 @@ async function resolveProviderCredentials(provider: AiProviderId): Promise<{
 
 export async function resolveTaskAiConfig(taskType: AiTaskType): Promise<ResolvedTaskAiConfig> {
   const validTask = AiTaskTypeSchema.parse(taskType);
-  const envRoute = resolveEnvTaskRoute(validTask);
 
-  let provider = envRoute.provider;
-  let model = envRoute.model;
-  let routeSource: 'database' | 'env' | 'default' = envRoute.routeSource;
-  let maxTokens: number | null = null;
-  let temperature: number | null = null;
-  let reasoningConfig: Record<string, unknown> | null = null;
+  return appCache.getOrSet(`ai:task:${validTask}`, async () => {
+    const envRoute = resolveEnvTaskRoute(validTask);
 
-  try {
-    const dbRoute = await prisma.aITaskRoute.findUnique({
-      where: { taskType: validTask }
-    });
+    let provider = envRoute.provider;
+    let model = envRoute.model;
+    let routeSource: 'database' | 'env' | 'default' = envRoute.routeSource;
+    let maxTokens: number | null = null;
+    let temperature: number | null = null;
+    let reasoningConfig: Record<string, unknown> | null = null;
 
-    if (dbRoute && dbRoute.isActive) {
-      provider = normalizeProvider(dbRoute.provider, envRoute.provider);
-      model = dbRoute.model.trim() || envRoute.model;
-      routeSource = 'database';
-      maxTokens = dbRoute.maxTokens ?? null;
-      temperature = dbRoute.temperature ?? null;
-      reasoningConfig = toJsonRecord(dbRoute.reasoningConfig);
+    try {
+      const dbRoute = await prisma.aITaskRoute.findUnique({
+        where: { taskType: validTask }
+      });
+
+      if (dbRoute && dbRoute.isActive) {
+        provider = normalizeProvider(dbRoute.provider, envRoute.provider);
+        model = dbRoute.model.trim() || envRoute.model;
+        routeSource = 'database';
+        maxTokens = dbRoute.maxTokens ?? null;
+        temperature = dbRoute.temperature ?? null;
+        reasoningConfig = toJsonRecord(dbRoute.reasoningConfig);
+      }
+    } catch (err) {
+      logger.warn({ err, taskType: validTask }, 'Failed reading AITaskRoute from DB; falling back to .env');
     }
-  } catch (err) {
-    logger.warn({ err, taskType: validTask }, 'Failed reading AITaskRoute from DB; falling back to .env');
-  }
 
-  const creds = await resolveProviderCredentials(provider);
+    if (routeSource !== 'database') {
+      reasoningConfig = resolveEnvReasoningConfig(provider, validTask);
+    }
 
-  return {
-    taskType: validTask,
-    provider,
-    model,
-    apiKey: creds.apiKey,
-    envVarName: creds.envVarName,
-    baseUrl: creds.baseUrl,
-    maxTokens,
-    temperature,
-    reasoningConfig,
-    extraConfig: creds.extraConfig,
-    routeSource,
-    keySource: creds.keySource
-  };
+    const creds = await resolveProviderCredentials(provider);
+
+    return {
+      taskType: validTask,
+      provider,
+      model,
+      apiKey: creds.apiKey,
+      envVarName: creds.envVarName,
+      baseUrl: creds.baseUrl,
+      maxTokens,
+      temperature,
+      reasoningConfig,
+      extraConfig: creds.extraConfig,
+      routeSource,
+      keySource: creds.keySource
+    };
+  });
 }
 
 export async function getAiRuntimeSummary(): Promise<AiRuntimeSummary> {
@@ -375,11 +420,13 @@ function mapProviderView(
 }
 
 export async function listAiProviderConfigs(): Promise<AiProviderConfigView[]> {
-  const rows = await prisma.aIProviderConfig.findMany({
-    where: { userId: null }
+  return appCache.getOrSet('ai:providers', async () => {
+    const rows = await prisma.aIProviderConfig.findMany({
+      where: { userId: null }
+    });
+    const byProvider = new Map(rows.map((r) => [r.provider, r]));
+    return SUPPORTED_PROVIDERS.map((p) => mapProviderView(p, byProvider.get(p) ?? null));
   });
-  const byProvider = new Map(rows.map((r) => [r.provider, r]));
-  return SUPPORTED_PROVIDERS.map((p) => mapProviderView(p, byProvider.get(p) ?? null));
 }
 
 export async function upsertAiProviderConfig(input: UpsertAiProviderConfig): Promise<AiProviderConfigView> {
@@ -433,44 +480,47 @@ export async function upsertAiProviderConfig(input: UpsertAiProviderConfig): Pro
     });
   }, TX_OPTIONS);
 
+  appCache.delPrefix('ai:');
   return mapProviderView(parsed.provider, saved);
 }
 
 export async function listAiTaskRoutes(): Promise<AiTaskRouteView[]> {
-  const dbRoutes = await prisma.aITaskRoute.findMany();
-  const byTask = new Map(dbRoutes.map((r) => [r.taskType, r]));
-  const tasks: readonly AiTaskType[] = ['vision', 'evaluation', 'audio'];
+  return appCache.getOrSet('ai:routes', async () => {
+    const dbRoutes = await prisma.aITaskRoute.findMany();
+    const byTask = new Map(dbRoutes.map((r) => [r.taskType, r]));
+    const tasks: readonly AiTaskType[] = ['vision', 'evaluation', 'audio'];
 
-  return tasks.map((taskType) => {
-    const dbRow = byTask.get(taskType);
-    if (dbRow && dbRow.isActive) {
+    return tasks.map((taskType) => {
+      const dbRow = byTask.get(taskType);
+      if (dbRow && dbRow.isActive) {
+        return {
+          id: dbRow.id,
+          taskType,
+          provider: normalizeProvider(dbRow.provider),
+          model: dbRow.model,
+          maxTokens: dbRow.maxTokens,
+          temperature: dbRow.temperature,
+          reasoningConfig: toJsonRecord(dbRow.reasoningConfig),
+          isActive: dbRow.isActive,
+          source: 'database',
+          updatedAt: dbRow.updatedAt.toISOString()
+        };
+      }
+
+      const envRoute = resolveEnvTaskRoute(taskType);
       return {
-        id: dbRow.id,
+        id: dbRow?.id,
         taskType,
-        provider: normalizeProvider(dbRow.provider),
-        model: dbRow.model,
-        maxTokens: dbRow.maxTokens,
-        temperature: dbRow.temperature,
-        reasoningConfig: toJsonRecord(dbRow.reasoningConfig),
-        isActive: dbRow.isActive,
-        source: 'database',
-        updatedAt: dbRow.updatedAt.toISOString()
+        provider: envRoute.provider,
+        model: envRoute.model,
+        maxTokens: dbRow?.maxTokens ?? null,
+        temperature: dbRow?.temperature ?? null,
+        reasoningConfig: resolveEnvReasoningConfig(envRoute.provider, taskType),
+        isActive: true,
+        source: envRoute.routeSource,
+        updatedAt: dbRow ? dbRow.updatedAt.toISOString() : null
       };
-    }
-
-    const envRoute = resolveEnvTaskRoute(taskType);
-    return {
-      id: dbRow?.id,
-      taskType,
-      provider: envRoute.provider,
-      model: envRoute.model,
-      maxTokens: dbRow?.maxTokens ?? null,
-      temperature: dbRow?.temperature ?? null,
-      reasoningConfig: toJsonRecord(dbRow?.reasoningConfig),
-      isActive: true,
-      source: envRoute.routeSource,
-      updatedAt: dbRow ? dbRow.updatedAt.toISOString() : null
-    };
+    });
   });
 }
 
@@ -499,6 +549,8 @@ export async function upsertAiTaskRoute(input: UpsertAiTaskRoute): Promise<AiTas
     }
   });
 
+  appCache.delPrefix('ai:');
+
   return {
     id: saved.id,
     taskType: AiTaskTypeSchema.parse(saved.taskType),
@@ -524,6 +576,8 @@ export async function deleteAiTaskRoute(taskType: AiTaskType): Promise<{
     await prisma.aITaskRoute.delete({ where: { taskType: validTask } });
   }
 
+  appCache.delPrefix('ai:');
+
   const envRoute = resolveEnvTaskRoute(validTask);
   return {
     deleted: Boolean(existing),
@@ -534,7 +588,7 @@ export async function deleteAiTaskRoute(taskType: AiTaskType): Promise<{
       model: envRoute.model,
       maxTokens: null,
       temperature: null,
-      reasoningConfig: null,
+      reasoningConfig: resolveEnvReasoningConfig(envRoute.provider, validTask),
       isActive: true,
       source: envRoute.routeSource,
       updatedAt: null

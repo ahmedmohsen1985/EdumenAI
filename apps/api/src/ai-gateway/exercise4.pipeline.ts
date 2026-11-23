@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import {
+  buildMarkingJsonSchema,
+  createMarkingReportSchema,
   EX4_TASK_EXTRACTION_PROMPT,
+  isLegacyEx4MarkingSchema,
   MARKING_JSON_SCHEMA,
-  MarkingReportSchema,
   TRANSCRIPTION_JSON_SCHEMA,
+  type MarkingMarksLimits,
   type MarkingReport,
   type PromptEntry,
   type TranscriptionMeta
@@ -534,18 +537,75 @@ export async function runDynamicOcr({
   };
 }
 
-function normalizeMarks(marks: Record<string, unknown>): MarkingReport['marks'] {
-  const content = Math.max(0, Math.min(8, Number(marks.content) || 0));
-  const language = Math.max(0, Math.min(15, Number(marks.language) || 0));
-  const total = Math.max(0, Math.min(23, Number(marks.total) || content + language));
+function toPosInt(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null;
+}
+
+function resolveMarksLimits(
+  explicit?: Partial<MarkingMarksLimits>,
+  aiMarks?: Record<string, unknown>
+): MarkingMarksLimits {
+  const explicitContent = toPosInt(explicit?.contentMax);
+  const explicitLang = toPosInt(explicit?.languageMax);
+  const explicitTotal = toPosInt(explicit?.totalMax);
+
+  if (explicitContent !== null && explicitLang !== null) {
+    return {
+      contentMax: explicitContent,
+      languageMax: explicitLang,
+      totalMax: explicitTotal ?? explicitContent + explicitLang
+    };
+  }
+
+  if (explicitTotal !== null && explicitTotal !== 23) {
+    const aiContentMax = toPosInt(aiMarks?.content_max);
+    const aiLangMax = toPosInt(aiMarks?.language_max);
+    if (aiContentMax !== null && aiLangMax !== null && aiContentMax + aiLangMax === explicitTotal) {
+      return {
+        contentMax: aiContentMax,
+        languageMax: aiLangMax,
+        totalMax: explicitTotal
+      };
+    }
+
+    const half = Math.floor(explicitTotal / 2);
+    return {
+      contentMax: half,
+      languageMax: explicitTotal - half,
+      totalMax: explicitTotal
+    };
+  }
+
+  return {
+    contentMax: 8,
+    languageMax: 15,
+    totalMax: 23
+  };
+}
+
+function normalizeMarks(
+  marks: Record<string, unknown>,
+  limits: MarkingMarksLimits = { contentMax: 8, languageMax: 15, totalMax: 23 }
+): MarkingReport['marks'] {
+  const content = Math.max(0, Math.min(limits.contentMax, Math.round(Number(marks.content) || 0)));
+  const language = Math.max(0, Math.min(limits.languageMax, Math.round(Number(marks.language) || 0)));
+  const rawTotal = Number(marks.total);
+  const total = Math.max(
+    0,
+    Math.min(
+      limits.totalMax,
+      Number.isFinite(rawTotal) ? Math.round(rawTotal) : content + language
+    )
+  );
 
   return {
     content,
-    content_max: 8,
+    content_max: limits.contentMax,
     language,
-    language_max: 15,
+    language_max: limits.languageMax,
     total,
-    total_max: 23
+    total_max: limits.totalMax
   };
 }
 
@@ -642,6 +702,7 @@ export interface EvaluateArticleParams {
   studentText: string;
   systemPrompts?: string[];
   markingSchema?: Record<string, unknown>;
+  marksLimits?: Partial<MarkingMarksLimits>;
 }
 
 export interface EvaluateArticleResult {
@@ -656,7 +717,8 @@ export async function evaluateArticle({
   taskPrompt,
   studentText,
   systemPrompts,
-  markingSchema
+  markingSchema,
+  marksLimits
 }: EvaluateArticleParams): Promise<EvaluateArticleResult> {
   if (!taskPrompt || !studentText) {
     throw new Error('Task prompt and student text are required.');
@@ -683,8 +745,16 @@ Return strictly valid JSON with keys: marks, justification, errors, content_feed
       : [readPromptFile('core_marking_protocol.txt'), readPromptFile('ex4_rubric_and_anchors.txt')];
   const fullSystemInstruction = resolvedPrompts.join('\n\n');
 
+  const preLimits = resolveMarksLimits(marksLimits);
+  const hasNonDefaultLimits =
+    preLimits.contentMax !== 8 || preLimits.languageMax !== 15 || preLimits.totalMax !== 23;
+
   const resolvedSchema =
-    markingSchema ?? (MARKING_JSON_SCHEMA as unknown as Record<string, unknown>);
+    !markingSchema || (isLegacyEx4MarkingSchema(markingSchema) && hasNonDefaultLimits)
+      ? hasNonDefaultLimits
+        ? buildMarkingJsonSchema(preLimits)
+        : (MARKING_JSON_SCHEMA as unknown as Record<string, unknown>)
+      : markingSchema;
 
   const initialResult = await invokeAiModel({
     taskType: 'evaluation',
@@ -700,11 +770,12 @@ Return strictly valid JSON with keys: marks, justification, errors, content_feed
   let aggregatedUsage = initialResult.usage;
   const parsed = extractAndParseJson(initialResult.text, initialResult.provider, initialResult.model);
 
-  const normalizedMarks = normalizeMarks(
+  const aiMarksObj =
     parsed.marks && typeof parsed.marks === 'object' && !Array.isArray(parsed.marks)
       ? (parsed.marks as Record<string, unknown>)
-      : {}
-  );
+      : {};
+  const resolvedLimits = resolveMarksLimits(marksLimits, aiMarksObj);
+  const normalizedMarks = normalizeMarks(aiMarksObj, resolvedLimits);
 
   const rawJust =
     parsed.justification && typeof parsed.justification === 'object' && !Array.isArray(parsed.justification)
@@ -768,7 +839,7 @@ Return strictly valid JSON with keys: marks, justification, errors, content_feed
 
   let report: MarkingReport;
   try {
-    report = MarkingReportSchema.parse({
+    report = createMarkingReportSchema(resolvedLimits).parse({
       marks: normalizedMarks,
       justification,
       errors,

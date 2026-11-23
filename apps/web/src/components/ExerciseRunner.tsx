@@ -16,10 +16,12 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
 import {
   ApiError,
   fetchPublishedExercise,
+  PUBLIC_CACHE_KEYS,
   runExerciseEvaluate,
   runExerciseOcr,
   type PublishedExerciseDetail
 } from '../lib/api';
+import { getCached, isCacheFresh } from '../lib/client-cache';
 
 interface ExerciseRunnerProps {
   code: string;
@@ -43,12 +45,15 @@ function isTranscriptionMeta(value: unknown): value is TranscriptionMeta {
 
 export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElement {
   const router = useRouter();
-  const [exercise, setExercise] = useState<PublishedExerciseDetail | null>(null);
+  const initialExercise = getCached<PublishedExerciseDetail>(
+    PUBLIC_CACHE_KEYS.publishedExercise(code)
+  );
+  const [exercise, setExercise] = useState<PublishedExerciseDetail | null>(initialExercise);
   const [values, setValues] = useState<BlockFormValues>({});
   const [rawOcrTexts, setRawOcrTexts] = useState<Record<string, string>>({});
   const [meta, setMeta] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<BlockFieldErrors>({});
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(initialExercise === null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<{ message: string; isQuota?: boolean } | null>(
@@ -56,8 +61,20 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
   );
 
   useEffect(() => {
+    const cacheKey = PUBLIC_CACHE_KEYS.publishedExercise(code);
+    const cached = getCached<PublishedExerciseDetail>(cacheKey);
+    if (cached) {
+      setExercise(cached);
+      setIsLoading(false);
+      if (isCacheFresh(cacheKey, 30_000)) {
+        return;
+      }
+    }
+
     let cancelled = false;
-    setIsLoading(true);
+    if (!cached) {
+      setIsLoading(true);
+    }
     setLoadError(null);
 
     void fetchPublishedExercise(code)
@@ -67,7 +84,9 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : 'Failed to load exercise.');
+        if (!cached) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load exercise.');
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -309,8 +328,8 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
       {/* Exercise Header */}
       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="inline-flex items-center rounded-md bg-brand-navy px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-brand-gold">
-            {exercise.skill} · {exercise.code}
+          <span className="inline-flex items-center rounded-md bg-brand-navy px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-brand-gold whitespace-nowrap shrink-0">
+            {exercise.skill}
           </span>
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
             <CheckCircle2 className="h-3.5 w-3.5" />

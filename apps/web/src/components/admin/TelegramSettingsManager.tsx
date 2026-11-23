@@ -21,14 +21,17 @@ import {
   X
 } from 'lucide-react';
 import {
+  ADMIN_SETTINGS_CACHE_KEYS,
   createTelegramTarget,
   deleteTelegramTarget,
   fetchTelegramSettings,
   saveTelegramConfig,
   sendTelegramTest,
   updateTelegramTarget,
+  type TelegramSettingsData,
   type TelegramTestMessageResult
 } from '../../lib/admin-settings-api';
+import { getCached, isCacheFresh } from '../../lib/client-cache';
 
 function configSourceLabel(source: TelegramConfigView['source']): string {
   if (source === 'database') return 'Database (Encrypted)';
@@ -43,15 +46,17 @@ function configSourceBadgeClasses(source: TelegramConfigView['source']): string 
 }
 
 export function TelegramSettingsManager(): React.ReactElement {
-  const [config, setConfig] = useState<TelegramConfigView | null>(null);
-  const [targets, setTargets] = useState<TelegramTargetView[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const cachedTg = getCached<TelegramSettingsData>(ADMIN_SETTINGS_CACHE_KEYS.telegram);
+
+  const [config, setConfig] = useState<TelegramConfigView | null>(cachedTg?.config ?? null);
+  const [targets, setTargets] = useState<TelegramTargetView[]>(cachedTg?.targets ?? []);
+  const [isLoading, setIsLoading] = useState<boolean>(cachedTg === null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // BotFather credentials state
   const [botTokenInput, setBotTokenInput] = useState<string>('');
   const [showBotToken, setShowBotToken] = useState<boolean>(false);
-  const [isBotEnabled, setIsBotEnabled] = useState<boolean>(false);
+  const [isBotEnabled, setIsBotEnabled] = useState<boolean>(cachedTg?.config.isEnabled ?? false);
   const [isSavingBot, setIsSavingBot] = useState<boolean>(false);
   const [botStatus, setBotStatus] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -90,23 +95,34 @@ export function TelegramSettingsManager(): React.ReactElement {
   // Collapsible BotFather guide
   const [showSetupGuide, setShowSetupGuide] = useState<boolean>(false);
 
-  const loadSettings = useCallback(async () => {
-    setIsLoading(true);
+  const loadSettings = useCallback(async (options?: { silent?: boolean; force?: boolean }) => {
+    if (!options?.silent) {
+      setIsLoading(true);
+    }
     setLoadError(null);
     try {
-      const data = await fetchTelegramSettings();
+      const data = await fetchTelegramSettings({ force: options?.force });
       setConfig(data.config);
       setIsBotEnabled(data.config.isEnabled);
       setTargets(data.targets);
     } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load Telegram settings.');
+      if (!options?.silent) {
+        setLoadError(err instanceof Error ? err.message : 'Failed to load Telegram settings.');
+      }
     } finally {
-      setIsLoading(false);
+      if (!options?.silent) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    void loadSettings();
+    const cached = getCached<TelegramSettingsData>(ADMIN_SETTINGS_CACHE_KEYS.telegram);
+    if (cached && isCacheFresh(ADMIN_SETTINGS_CACHE_KEYS.telegram, 30_000)) {
+      setIsLoading(false);
+      return;
+    }
+    void loadSettings({ silent: cached !== null });
   }, [loadSettings]);
 
   const handleSaveBotConfig = async (e: React.FormEvent): Promise<void> => {
@@ -262,7 +278,7 @@ export function TelegramSettingsManager(): React.ReactElement {
         </div>
         <button
           type="button"
-          onClick={() => void loadSettings()}
+          onClick={() => void loadSettings({ force: true })}
           disabled={isLoading}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >

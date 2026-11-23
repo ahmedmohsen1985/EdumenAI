@@ -8,6 +8,7 @@ import type {
   TemplateConfig,
   TranscriptionMeta
 } from '@edumenai/shared';
+import { fetchWithCache } from './client-cache';
 
 /**
  * Runtime API client for browser and server-side calls.
@@ -141,16 +142,40 @@ export interface TelegramDispatchResult {
   } | null;
 }
 
-export async function fetchPublishedExercises(): Promise<PublishedExerciseSummary[]> {
-  const res = await apiFetch<{ success: true; data: PublishedExerciseSummary[] }>('/api/exercises');
-  return res.data;
+export const PUBLIC_CACHE_KEYS = {
+  publishedExercises: 'pub:exercises',
+  publishedExercise: (code: string) => `pub:exercise:${code}`
+} as const;
+
+export async function fetchPublishedExercises(options?: {
+  force?: boolean;
+}): Promise<PublishedExerciseSummary[]> {
+  return fetchWithCache(
+    PUBLIC_CACHE_KEYS.publishedExercises,
+    async () => {
+      const res = await apiFetch<{ success: true; data: PublishedExerciseSummary[] }>(
+        '/api/exercises'
+      );
+      return res.data;
+    },
+    { ttlMs: 30_000, force: options?.force }
+  );
 }
 
-export async function fetchPublishedExercise(code: string): Promise<PublishedExerciseDetail> {
-  const res = await apiFetch<{ success: true; data: PublishedExerciseDetail }>(
-    `/api/exercises/${encodeURIComponent(code)}`
+export async function fetchPublishedExercise(
+  code: string,
+  options?: { force?: boolean }
+): Promise<PublishedExerciseDetail> {
+  return fetchWithCache(
+    PUBLIC_CACHE_KEYS.publishedExercise(code),
+    async () => {
+      const res = await apiFetch<{ success: true; data: PublishedExerciseDetail }>(
+        `/api/exercises/${encodeURIComponent(code)}`
+      );
+      return res.data;
+    },
+    { ttlMs: 30_000, force: options?.force }
   );
-  return res.data;
 }
 
 export async function runExerciseOcr(

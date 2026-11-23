@@ -25,13 +25,16 @@ import {
   Zap
 } from 'lucide-react';
 import {
+  ADMIN_SETTINGS_CACHE_KEYS,
   fetchAiSettings,
   resetAiTaskRoute,
   saveAiProviderConfig,
   saveAiTaskRoute,
   testAiProvider,
-  type AiProviderTestResult
+  type AiProviderTestResult,
+  type AiSettingsData
 } from '../../lib/admin-settings-api';
+import { getCached, isCacheFresh } from '../../lib/client-cache';
 
 interface ProviderMeta {
   id: AiProviderId;
@@ -127,9 +130,32 @@ interface ProviderFormState {
 interface RouteFormState {
   provider: AiProviderId;
   model: string;
-  temperature: string;
+  thinkingEffort: string;
   maxTokens: string;
   isActive: boolean;
+}
+
+const THINKING_EFFORT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: '', label: 'Default (Auto / .env)' },
+  { value: 'none', label: 'None (Off)' },
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' }
+];
+
+function extractThinkingEffort(
+  reasoningConfig: Record<string, unknown> | null | undefined
+): string {
+  if (!reasoningConfig) return '';
+  const raw =
+    typeof reasoningConfig.effort === 'string'
+      ? reasoningConfig.effort
+      : typeof reasoningConfig.thinkingLevel === 'string'
+        ? reasoningConfig.thinkingLevel
+        : '';
+  const normalized = raw.trim().toLowerCase();
+  return ['none', 'minimal', 'low', 'medium', 'high'].includes(normalized) ? normalized : '';
 }
 
 function sourceBadgeClasses(source: 'database' | 'env' | 'default' | 'none'): string {
@@ -158,21 +184,52 @@ function routeSourceLabel(source: AiTaskRouteView['source']): string {
 }
 
 export function AiSettingsManager(): React.ReactElement {
-  const [providers, setProviders] = useState<AiProviderConfigView[]>([]);
-  const [routes, setRoutes] = useState<AiTaskRouteView[]>([]);
-  const [providerForms, setProviderForms] = useState<Record<AiProviderId, ProviderFormState>>({
-    google: { apiKey: '', showKey: false, baseUrl: '', model: '', isEnabled: true, isDefault: false },
-    openai: { apiKey: '', showKey: false, baseUrl: '', model: '', isEnabled: true, isDefault: false },
-    anthropic: { apiKey: '', showKey: false, baseUrl: '', model: '', isEnabled: true, isDefault: false },
-    openrouter: { apiKey: '', showKey: false, baseUrl: '', model: '', isEnabled: true, isDefault: false }
+  const cachedAi = getCached<AiSettingsData>(ADMIN_SETTINGS_CACHE_KEYS.ai);
+
+  const [providers, setProviders] = useState<AiProviderConfigView[]>(cachedAi?.providers ?? []);
+  const [routes, setRoutes] = useState<AiTaskRouteView[]>(cachedAi?.routes ?? []);
+  const [providerForms, setProviderForms] = useState<Record<AiProviderId, ProviderFormState>>(() => {
+    const base: Record<AiProviderId, ProviderFormState> = {
+      google: { apiKey: '', showKey: false, baseUrl: '', model: '', isEnabled: true, isDefault: false },
+      openai: { apiKey: '', showKey: false, baseUrl: '', model: '', isEnabled: true, isDefault: false },
+      anthropic: { apiKey: '', showKey: false, baseUrl: '', model: '', isEnabled: true, isDefault: false },
+      openrouter: { apiKey: '', showKey: false, baseUrl: '', model: '', isEnabled: true, isDefault: false }
+    };
+    if (cachedAi) {
+      for (const p of cachedAi.providers) {
+        base[p.provider] = {
+          apiKey: '',
+          showKey: false,
+          baseUrl: p.baseUrl ?? '',
+          model: p.model ?? '',
+          isEnabled: p.isEnabled,
+          isDefault: p.isDefault
+        };
+      }
+    }
+    return base;
   });
-  const [routeForms, setRouteForms] = useState<Record<AiTaskType, RouteFormState>>({
-    vision: { provider: 'google', model: '', temperature: '', maxTokens: '', isActive: true },
-    evaluation: { provider: 'google', model: '', temperature: '', maxTokens: '', isActive: true },
-    audio: { provider: 'openai', model: 'whisper-1', temperature: '', maxTokens: '', isActive: true }
+  const [routeForms, setRouteForms] = useState<Record<AiTaskType, RouteFormState>>(() => {
+    const base: Record<AiTaskType, RouteFormState> = {
+      vision: { provider: 'google', model: '', thinkingEffort: '', maxTokens: '', isActive: true },
+      evaluation: { provider: 'google', model: '', thinkingEffort: '', maxTokens: '', isActive: true },
+      audio: { provider: 'openai', model: 'whisper-1', thinkingEffort: '', maxTokens: '', isActive: true }
+    };
+    if (cachedAi) {
+      for (const r of cachedAi.routes) {
+        base[r.taskType] = {
+          provider: r.provider,
+          model: r.model,
+          thinkingEffort: extractThinkingEffort(r.reasoningConfig),
+          maxTokens: r.maxTokens !== null && r.maxTokens !== undefined ? String(r.maxTokens) : '',
+          isActive: r.isActive
+        };
+      }
+    }
+    return base;
   });
 
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(cachedAi === null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [savingProvider, setSavingProvider] = useState<AiProviderId | null>(null);
@@ -216,8 +273,7 @@ export function AiSettingsManager(): React.ReactElement {
           next[r.taskType] = {
             provider: r.provider,
             model: r.model,
-            temperature:
-              r.temperature !== null && r.temperature !== undefined ? String(r.temperature) : '',
+            thinkingEffort: extractThinkingEffort(r.reasoningConfig),
             maxTokens: r.maxTokens !== null && r.maxTokens !== undefined ? String(r.maxTokens) : '',
             isActive: r.isActive
           };
@@ -228,21 +284,35 @@ export function AiSettingsManager(): React.ReactElement {
     []
   );
 
-  const loadSettings = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const data = await fetchAiSettings();
-      hydrateFromData(data);
-    } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load AI settings.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [hydrateFromData]);
+  const loadSettings = useCallback(
+    async (options?: { silent?: boolean; force?: boolean }) => {
+      if (!options?.silent) {
+        setIsLoading(true);
+      }
+      setLoadError(null);
+      try {
+        const data = await fetchAiSettings({ force: options?.force });
+        hydrateFromData(data);
+      } catch (err: unknown) {
+        if (!options?.silent) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load AI settings.');
+        }
+      } finally {
+        if (!options?.silent) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [hydrateFromData]
+  );
 
   useEffect(() => {
-    void loadSettings();
+    const cached = getCached<AiSettingsData>(ADMIN_SETTINGS_CACHE_KEYS.ai);
+    if (cached && isCacheFresh(ADMIN_SETTINGS_CACHE_KEYS.ai, 30_000)) {
+      setIsLoading(false);
+      return;
+    }
+    void loadSettings({ silent: cached !== null });
   }, [loadSettings]);
 
   const handleSaveProvider = async (providerId: AiProviderId): Promise<void> => {
@@ -321,19 +391,6 @@ export function AiSettingsManager(): React.ReactElement {
       return;
     }
 
-    let temperature: number | null = null;
-    if (form.temperature.trim() !== '') {
-      const parsedTemp = Number(form.temperature);
-      if (!Number.isFinite(parsedTemp) || parsedTemp < 0 || parsedTemp > 2) {
-        setRouteStatus((prev) => ({
-          ...prev,
-          [taskType]: { ok: false, message: 'Temperature must be between 0 and 2.' }
-        }));
-        return;
-      }
-      temperature = parsedTemp;
-    }
-
     let maxTokens: number | null = null;
     if (form.maxTokens.trim() !== '') {
       const parsedTokens = Number.parseInt(form.maxTokens, 10);
@@ -354,7 +411,13 @@ export function AiSettingsManager(): React.ReactElement {
       await saveAiTaskRoute(taskType, {
         provider: form.provider,
         model: form.model.trim(),
-        temperature,
+        temperature: null,
+        reasoningConfig: form.thinkingEffort
+          ? {
+              effort: form.thinkingEffort,
+              thinkingLevel: form.thinkingEffort.toUpperCase()
+            }
+          : null,
         maxTokens,
         isActive: form.isActive
       });
@@ -425,7 +488,7 @@ export function AiSettingsManager(): React.ReactElement {
         </div>
         <button
           type="button"
-          onClick={() => void loadSettings()}
+          onClick={() => void loadSettings({ force: true })}
           disabled={isLoading}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >
@@ -850,30 +913,31 @@ export function AiSettingsManager(): React.ReactElement {
                         </div>
                       </div>
 
-                      {/* Temperature & Max Tokens */}
+                      {/* Thinking / Reasoning Effort & Max Tokens */}
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs font-semibold text-slate-700">
-                            Temperature (0–2)
+                            Thinking / Reasoning Effort
                           </label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={2}
-                            step={0.1}
-                            value={form.temperature}
+                          <select
+                            value={form.thinkingEffort}
                             onChange={(e) =>
                               setRouteForms((prev) => ({
                                 ...prev,
                                 [route.taskType]: {
                                   ...prev[route.taskType],
-                                  temperature: e.target.value
+                                  thinkingEffort: e.target.value
                                 }
                               }))
                             }
-                            placeholder="Default"
                             className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-navy focus:outline-none"
-                          />
+                          >
+                            {THINKING_EFFORT_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-slate-700">
@@ -898,6 +962,12 @@ export function AiSettingsManager(): React.ReactElement {
                           />
                         </div>
                       </div>
+                      {route.taskType === 'audio' && (
+                        <p className="text-[11px] text-slate-500">
+                          Thinking effort applies to multimodal audio models (e.g. Gemini), not
+                          Whisper.
+                        </p>
+                      )}
 
                       {/* Active Toggle */}
                       <label className="inline-flex items-center gap-2 cursor-pointer text-sm">

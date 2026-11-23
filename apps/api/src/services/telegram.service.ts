@@ -10,6 +10,7 @@ import {
   UpsertTelegramConfigSchema
 } from '@edumenai/shared';
 import { decryptSecret, encryptSecret, maskSecret } from '../lib/crypto.js';
+import { appCache } from '../lib/cache.js';
 import { logger } from '../lib/logger.js';
 import { prisma } from '../lib/prisma.js';
 
@@ -112,46 +113,48 @@ function toTargetView(row: {
 }
 
 export async function getTelegramConfigView(): Promise<TelegramConfigView> {
-  const envToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  return appCache.getOrSet('telegram:config', async () => {
+    const envToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
 
-  try {
-    const dbConfig = await prisma.telegramConfig.findUnique({
-      where: { key: 'default' }
-    });
-    if (dbConfig) {
-      let plainToken = '';
-      if (dbConfig.botToken.trim()) {
-        try {
-          plainToken = decryptSecret(dbConfig.botToken).trim();
-        } catch {
-          plainToken = '';
+    try {
+      const dbConfig = await prisma.telegramConfig.findUnique({
+        where: { key: 'default' }
+      });
+      if (dbConfig) {
+        let plainToken = '';
+        if (dbConfig.botToken.trim()) {
+          try {
+            plainToken = decryptSecret(dbConfig.botToken).trim();
+          } catch {
+            plainToken = '';
+          }
         }
+        const effectiveToken = plainToken || envToken;
+        const source: 'database' | 'env' | 'none' = plainToken
+          ? 'database'
+          : envToken
+            ? 'env'
+            : 'none';
+        return {
+          hasBotToken: Boolean(effectiveToken),
+          botTokenMasked: maskSecret(effectiveToken),
+          isEnabled: dbConfig.isEnabled,
+          source,
+          updatedAt: dbConfig.updatedAt.toISOString()
+        };
       }
-      const effectiveToken = plainToken || envToken;
-      const source: 'database' | 'env' | 'none' = plainToken
-        ? 'database'
-        : envToken
-          ? 'env'
-          : 'none';
-      return {
-        hasBotToken: Boolean(effectiveToken),
-        botTokenMasked: maskSecret(effectiveToken),
-        isEnabled: dbConfig.isEnabled,
-        source,
-        updatedAt: dbConfig.updatedAt.toISOString()
-      };
+    } catch (err) {
+      logger.warn({ err }, 'Failed reading TelegramConfig view from DB');
     }
-  } catch (err) {
-    logger.warn({ err }, 'Failed reading TelegramConfig view from DB');
-  }
 
-  return {
-    hasBotToken: Boolean(envToken),
-    botTokenMasked: maskSecret(envToken),
-    isEnabled: Boolean(envToken),
-    source: envToken ? 'env' : 'none',
-    updatedAt: null
-  };
+    return {
+      hasBotToken: Boolean(envToken),
+      botTokenMasked: maskSecret(envToken),
+      isEnabled: Boolean(envToken),
+      source: envToken ? 'env' : 'none',
+      updatedAt: null
+    };
+  });
 }
 
 export async function upsertTelegramConfig(input: UpsertTelegramConfig): Promise<TelegramConfigView> {
@@ -176,14 +179,17 @@ export async function upsertTelegramConfig(input: UpsertTelegramConfig): Promise
     }
   });
 
+  appCache.delPrefix('telegram:');
   return getTelegramConfigView();
 }
 
 export async function listTelegramTargets(): Promise<TelegramTargetView[]> {
-  const rows = await prisma.telegramTarget.findMany({
-    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }]
+  return appCache.getOrSet('telegram:targets', async () => {
+    const rows = await prisma.telegramTarget.findMany({
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }]
+    });
+    return rows.map(toTargetView);
   });
-  return rows.map(toTargetView);
 }
 
 export async function createTelegramTarget(input: CreateTelegramTarget): Promise<TelegramTargetView> {
@@ -197,6 +203,7 @@ export async function createTelegramTarget(input: CreateTelegramTarget): Promise
       isActive: parsed.isActive ?? true
     }
   });
+  appCache.delPrefix('telegram:');
   return toTargetView(created);
 }
 
@@ -217,11 +224,13 @@ export async function updateTelegramTarget(
       ...(parsed.isActive !== undefined ? { isActive: parsed.isActive } : {})
     }
   });
+  appCache.delPrefix('telegram:');
   return toTargetView(updated);
 }
 
 export async function deleteTelegramTarget(id: string): Promise<{ id: string; deleted: boolean }> {
   await prisma.telegramTarget.delete({ where: { id } });
+  appCache.delPrefix('telegram:');
   return { id, deleted: true };
 }
 
@@ -374,16 +383,18 @@ export async function sendTelegramTestMessage(
 export async function notifyStudent(
   telegramId: string,
   studentName: string,
-  evaluation: Partial<MarkingReport>
+  evaluation: Partial<MarkingReport>,
+  exerciseTitle = 'Exercise 4'
 ): Promise<TelegramApiResult | null> {
   if (!telegramId) return null;
 
   const firstName = studentName ? studentName.split(' ')[0] : 'Student';
   const errorCount = Array.isArray(evaluation.errors) ? evaluation.errors.length : 0;
   const marks = evaluation.marks;
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Exercise 4');
 
   const msg = `
-🌟 <b>EdumenAI - Exercise 4 Evaluation</b>
+🌟 <b>EdumenAI - ${safeTitle} Evaluation</b>
 👤 <b>Student:</b> ${escapeTelegramHtml(firstName)}
 
 📊 <b>Scores:</b>
@@ -409,7 +420,8 @@ export async function sendTeacherAudit(
   textOrRaw: string | undefined,
   finalOrEval?: string | Partial<MarkingReport>,
   maybeEval?: Partial<MarkingReport>,
-  targetIds?: string[]
+  targetIds?: string[],
+  exerciseTitle = 'Exercise 4'
 ): Promise<Array<{ chatId: string; result: TelegramApiResult | null }>> {
   const resolvedTargets = await resolveTargetChatIds(targetIds);
   if (resolvedTargets.length === 0) {
@@ -434,16 +446,17 @@ export async function sendTeacherAudit(
   const marks = evaluation.marks;
   const snippet = studentText.trim();
   const classLabel = studentInfo.className || studentInfo.class || 'Class';
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Exercise 4');
 
   const auditMsg = `
-📋 <b>AUDIT REPORT - Exercise 4 (Article)</b>
+📋 <b>AUDIT REPORT - ${safeTitle}</b>
 👤 <b>Student:</b> ${escapeTelegramHtml(studentInfo.name || 'Unknown')} (${escapeTelegramHtml(studentInfo.school || 'General')} - ${escapeTelegramHtml(classLabel)})
 📱 <b>Telegram ID:</b> ${escapeTelegramHtml(studentInfo.telegram || studentInfo.telegramId || 'N/A')}
 📊 <b>Result:</b> <b>${marks?.total ?? 0}/${marks?.total_max ?? 23}</b> (Content: ${marks?.content ?? 0}/${marks?.content_max ?? 8}, Language: ${marks?.language ?? 0}/${marks?.language_max ?? 15})
 🔍 <b>Errors Flagged:</b> ${errorCount}
 🔒 <b>Mode:</b> Verbatim Handwriting OCR (Locked - Unedited)
 
-📝 <b>Student Article:</b>
+📝 <b>Student Submission:</b>
 <code>${escapeTelegramHtml(snippet.substring(0, 1500))}</code>
 `;
 
@@ -460,7 +473,8 @@ export async function dispatchFullReportWithPdf({
   evaluation,
   pdfBuffer,
   fileName,
-  targetIds
+  targetIds,
+  exerciseTitle = 'Exercise 4'
 }: {
   studentInfo: TelegramStudentInfo;
   evaluation: Partial<MarkingReport>;
@@ -469,6 +483,7 @@ export async function dispatchFullReportWithPdf({
   pdfBuffer?: Buffer;
   fileName?: string;
   targetIds?: string[];
+  exerciseTitle?: string;
 }): Promise<{
   targets: Array<{ chatId: string; ok: boolean; error?: string }>;
   student: TelegramApiResult | null;
@@ -481,10 +496,11 @@ export async function dispatchFullReportWithPdf({
   const marks = evaluation.marks;
   const classLabel = studentInfo.className || studentInfo.class || 'Class';
   const resolvedFileName = fileName || 'EdumenAI_Report.pdf';
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Exercise 4');
 
   const resolvedTargets = await resolveTargetChatIds(targetIds);
   if (resolvedTargets.length > 0) {
-    const teacherCaption = `📋 <b>EdumenAI - Exercise 4 Marked Report</b>
+    const teacherCaption = `📋 <b>EdumenAI - ${safeTitle} Marked Report</b>
 👤 <b>Student:</b> ${escapeTelegramHtml(studentInfo.name || 'Unknown')} (${escapeTelegramHtml(classLabel)} - ${escapeTelegramHtml(studentInfo.school || 'School')})
 📱 <b>Telegram ID:</b> ${escapeTelegramHtml(studentInfo.telegram || studentInfo.telegramId || 'N/A')}
 📊 <b>Marks:</b> <b>${marks?.total ?? 0}/${marks?.total_max ?? 23}</b> (Content: ${marks?.content ?? 0}/${marks?.content_max ?? 8}, Language: ${marks?.language ?? 0}/${marks?.language_max ?? 15})
@@ -510,7 +526,7 @@ export async function dispatchFullReportWithPdf({
 
   const studentTelegramId = studentInfo.telegramId || studentInfo.telegram;
   if (studentTelegramId && /^\d+$/.test(String(studentTelegramId).trim())) {
-    const studentCaption = `🌟 <b>EdumenAI - Exercise 4 Marked Report</b>
+    const studentCaption = `🌟 <b>EdumenAI - ${safeTitle} Marked Report</b>
 👤 <b>Hello ${escapeTelegramHtml(firstName)}!</b>
 
 📊 <b>Your Scores:</b>
@@ -588,15 +604,17 @@ export async function sendTeacherQuotaAlert({
 
 export async function sendTeacherError(
   studentInfo: TelegramStudentInfo | null | undefined,
-  errorMessage: string
+  errorMessage: string,
+  exerciseTitle = 'Exercise 4'
 ): Promise<TelegramApiResult[] | null> {
   const resolvedTargets = await resolveTargetChatIds();
   if (resolvedTargets.length === 0) {
     return null;
   }
 
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Exercise 4');
   const msg = `
-⚠️ <b>EdumenAI Error - Exercise 4</b>
+⚠️ <b>EdumenAI Error - ${safeTitle}</b>
 👤 <b>Student:</b> ${escapeTelegramHtml(studentInfo?.name || 'Unknown')} (${escapeTelegramHtml(studentInfo?.school || 'General')})
 📱 <b>Telegram:</b> ${escapeTelegramHtml(studentInfo?.telegram || studentInfo?.telegramId || 'N/A')}
 

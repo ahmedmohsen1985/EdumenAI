@@ -9,6 +9,14 @@ import type {
   VersionStatus
 } from '@edumenai/shared';
 import { adminFetch } from './admin-auth';
+import { fetchWithCache, invalidateCache } from './client-cache';
+
+export const ADMIN_EXERCISES_CACHE_KEYS = {
+  exercises: 'admin:exercises',
+  exercise: (code: string) => `admin:exercise:${code}`,
+  telegramTargets: 'admin:telegram:targets',
+  stats: 'admin:stats'
+} as const;
 
 export interface AdminExerciseSummary {
   id: string;
@@ -82,11 +90,19 @@ export interface AdminPlatformStats {
   telegramTargets: TelegramTargetView[];
 }
 
-export async function fetchAdminExercises(): Promise<AdminExerciseSummary[]> {
-  const res = await adminFetch<{ success: true; data: AdminExerciseSummary[] }>(
-    '/api/admin/exercises'
+export async function fetchAdminExercises(options?: {
+  force?: boolean;
+}): Promise<AdminExerciseSummary[]> {
+  return fetchWithCache(
+    ADMIN_EXERCISES_CACHE_KEYS.exercises,
+    async () => {
+      const res = await adminFetch<{ success: true; data: AdminExerciseSummary[] }>(
+        '/api/admin/exercises'
+      );
+      return res.data;
+    },
+    { ttlMs: 30_000, force: options?.force }
   );
-  return res.data;
 }
 
 export async function createAdminExercise(
@@ -99,14 +115,27 @@ export async function createAdminExercise(
       body: JSON.stringify(input)
     }
   );
+  invalidateCache('admin:exercises');
+  invalidateCache('admin:exercise:');
+  invalidateCache('admin:stats');
+  invalidateCache('pub:');
   return res.data;
 }
 
-export async function fetchAdminExercise(code: string): Promise<AdminExerciseDetail> {
-  const res = await adminFetch<{ success: true; data: AdminExerciseDetail }>(
-    `/api/admin/exercises/${encodeURIComponent(code)}`
+export async function fetchAdminExercise(
+  code: string,
+  options?: { force?: boolean }
+): Promise<AdminExerciseDetail> {
+  return fetchWithCache(
+    ADMIN_EXERCISES_CACHE_KEYS.exercise(code),
+    async () => {
+      const res = await adminFetch<{ success: true; data: AdminExerciseDetail }>(
+        `/api/admin/exercises/${encodeURIComponent(code)}`
+      );
+      return res.data;
+    },
+    { ttlMs: 30_000, force: options?.force }
   );
-  return res.data;
 }
 
 export async function saveAdminExerciseDraft(
@@ -120,6 +149,10 @@ export async function saveAdminExerciseDraft(
     method: 'PUT',
     body: JSON.stringify(input)
   });
+  invalidateCache('admin:exercises');
+  invalidateCache('admin:exercise:');
+  invalidateCache('admin:stats');
+  invalidateCache('pub:');
   return res.data;
 }
 
@@ -134,33 +167,53 @@ export async function publishAdminExercise(
     method: 'POST',
     body: JSON.stringify(versionId ? { versionId } : {})
   });
+  invalidateCache('admin:exercises');
+  invalidateCache('admin:exercise:');
+  invalidateCache('admin:stats');
+  invalidateCache('pub:');
   return res.data;
 }
 
-export async function fetchTelegramTargetsSummary(): Promise<TelegramTargetView[]> {
-  const res = await adminFetch<{
-    success: true;
-    data: { config: TelegramConfigView; targets: TelegramTargetView[] };
-  }>('/api/admin/settings/telegram');
-  return res.data.targets;
+export async function fetchTelegramTargetsSummary(options?: {
+  force?: boolean;
+}): Promise<TelegramTargetView[]> {
+  return fetchWithCache(
+    ADMIN_EXERCISES_CACHE_KEYS.telegramTargets,
+    async () => {
+      const res = await adminFetch<{
+        success: true;
+        data: { config: TelegramConfigView; targets: TelegramTargetView[] };
+      }>('/api/admin/settings/telegram');
+      return res.data.targets;
+    },
+    { ttlMs: 30_000, force: options?.force }
+  );
 }
 
-export async function fetchAdminPlatformStats(): Promise<AdminPlatformStats> {
-  const [aiRes, tgRes] = await Promise.all([
-    adminFetch<{
-      success: true;
-      data: { providers: AiProviderConfigView[]; routes: AiTaskRouteView[] };
-    }>('/api/admin/settings/ai'),
-    adminFetch<{
-      success: true;
-      data: { config: TelegramConfigView; targets: TelegramTargetView[] };
-    }>('/api/admin/settings/telegram')
-  ]);
+export async function fetchAdminPlatformStats(options?: {
+  force?: boolean;
+}): Promise<AdminPlatformStats> {
+  return fetchWithCache(
+    ADMIN_EXERCISES_CACHE_KEYS.stats,
+    async () => {
+      const [aiRes, tgRes] = await Promise.all([
+        adminFetch<{
+          success: true;
+          data: { providers: AiProviderConfigView[]; routes: AiTaskRouteView[] };
+        }>('/api/admin/settings/ai'),
+        adminFetch<{
+          success: true;
+          data: { config: TelegramConfigView; targets: TelegramTargetView[] };
+        }>('/api/admin/settings/telegram')
+      ]);
 
-  return {
-    aiProviders: aiRes.data.providers,
-    aiRoutes: aiRes.data.routes,
-    telegramConfig: tgRes.data.config,
-    telegramTargets: tgRes.data.targets
-  };
+      return {
+        aiProviders: aiRes.data.providers,
+        aiRoutes: aiRes.data.routes,
+        telegramConfig: tgRes.data.config,
+        telegramTargets: tgRes.data.targets
+      };
+    },
+    { ttlMs: 30_000, force: options?.force }
+  );
 }

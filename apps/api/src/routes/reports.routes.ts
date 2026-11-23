@@ -141,7 +141,8 @@ router.post(
         finalText: report.finalText,
         pdfBuffer: req.file?.buffer,
         fileName,
-        targetIds
+        targetIds,
+        exerciseTitle: report.exerciseTitle || report.exerciseCode.toUpperCase()
       });
 
       res.json({

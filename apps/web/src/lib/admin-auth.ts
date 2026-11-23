@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { fetchWithCache, invalidateCache } from './client-cache';
 
 const ADMIN_KEY_STORAGE_KEY = 'edumenai_admin_key';
 
@@ -23,6 +24,7 @@ export function setStoredAdminKey(key: string): void {
   } catch {
     // Ignore storage unavailability
   }
+  invalidateCache('admin:');
 }
 
 export function clearStoredAdminKey(): void {
@@ -32,6 +34,7 @@ export function clearStoredAdminKey(): void {
   } catch {
     // Ignore storage unavailability
   }
+  invalidateCache('admin:');
 }
 
 export function getAdminAuthHeaders(overrideKey?: string): Record<string, string> {
@@ -58,9 +61,18 @@ export async function adminFetch<T>(
 export async function checkAdminAuth(
   overrideKey?: string
 ): Promise<{ authenticated: boolean; mode: 'open_dev' | 'key' | string }> {
-  const res = await adminFetch<{
-    success: true;
-    data: { authenticated: boolean; mode: string };
-  }>('/api/admin/auth/check', { adminKey: overrideKey });
-  return res.data;
+  const effectiveKey = (overrideKey !== undefined ? overrideKey : getStoredAdminKey()).trim();
+  const cacheKey = `admin:auth:${effectiveKey || 'open'}`;
+
+  return fetchWithCache(
+    cacheKey,
+    async () => {
+      const res = await adminFetch<{
+        success: true;
+        data: { authenticated: boolean; mode: string };
+      }>('/api/admin/auth/check', { adminKey: overrideKey });
+      return res.data;
+    },
+    { ttlMs: 300_000 }
+  );
 }

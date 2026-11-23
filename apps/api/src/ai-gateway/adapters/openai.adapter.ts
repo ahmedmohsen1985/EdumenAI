@@ -121,12 +121,29 @@ export async function callOpenAiCompatibleAdapter({
       const configuredEffort =
         typeof reasoningConfig?.effort === 'string'
           ? reasoningConfig.effort
-          : (taskType === 'vision'
-              ? process.env.OPENROUTER_VISION_REASONING
-              : process.env.OPENROUTER_EVAL_REASONING) || '';
+          : typeof reasoningConfig?.thinkingLevel === 'string'
+            ? reasoningConfig.thinkingLevel
+            : (taskType === 'vision'
+                ? process.env.OPENROUTER_VISION_REASONING
+                : process.env.OPENROUTER_EVAL_REASONING) || '';
       const effort = configuredEffort.trim().toLowerCase();
       if (effort) {
         payload.reasoning = { effort };
+      }
+    }
+
+    if (provider === 'openai' && isOpenAiReasoningModel) {
+      const configuredEffort =
+        typeof reasoningConfig?.effort === 'string'
+          ? reasoningConfig.effort
+          : typeof reasoningConfig?.thinkingLevel === 'string'
+            ? reasoningConfig.thinkingLevel
+            : (taskType === 'vision'
+                ? process.env.OPENAI_VISION_REASONING
+                : process.env.OPENAI_EVAL_REASONING) || '';
+      const effort = configuredEffort.trim().toLowerCase();
+      if (['minimal', 'low', 'medium', 'high'].includes(effort)) {
+        payload.reasoning_effort = effort;
       }
     }
 

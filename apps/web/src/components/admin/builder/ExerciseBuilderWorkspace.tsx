@@ -126,6 +126,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
   });
   const [promptEntries, setPromptEntries] = useState<PromptEntry[]>([]);
 
+  const [promptValidationError, setPromptValidationError] = useState<string | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<BuilderTab>('canvas');
   const [showMetaDrawer, setShowMetaDrawer] = useState<boolean>(false);
@@ -206,6 +207,34 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
   }, [code, hydrateFromDetail]);
 
   const saveDraftInternal = async (): Promise<AdminPromptVersionView | null> => {
+    if (promptValidationError) {
+      setStatusBanner({
+        type: 'error',
+        message: `Fix prompt validation errors before saving: ${promptValidationError}`
+      });
+      return null;
+    }
+
+    const seenKeys = new Set<string>();
+    for (const entry of promptEntries) {
+      const trimmedKey = entry.key.trim();
+      if (!trimmedKey || !/^[a-z0-9_]+$/.test(trimmedKey)) {
+        setStatusBanner({
+          type: 'error',
+          message: `Fix prompt validation errors before saving: Prompt "${entry.label || '(untitled)'}" has an empty or invalid key.`
+        });
+        return null;
+      }
+      if (seenKeys.has(trimmedKey)) {
+        setStatusBanner({
+          type: 'error',
+          message: `Fix prompt validation errors before saving: Duplicate prompt key "${trimmedKey}".`
+        });
+        return null;
+      }
+      seenKeys.add(trimmedKey);
+    }
+
     setIsSaving(true);
     setStatusBanner(null);
     try {
@@ -716,16 +745,39 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
         </DndContext>
       )}
 
-      {activeTab === 'prompts' && (
-        <GlobalPromptManager
-          promptEntries={promptEntries}
-          canvasBlocks={templateSchema.blocks}
-          onChangePrompts={(next) => {
-            setPromptEntries(next);
-            setIsDirty(true);
-          }}
-        />
-      )}
+      {activeTab === 'prompts' && (() => {
+        const evalBlock = templateSchema.blocks.find((b) => b.type === 'examiner_evaluation');
+        const evalContentMax =
+          typeof evalBlock?.props?.contentMax === 'number' && evalBlock.props.contentMax > 0
+            ? evalBlock.props.contentMax
+            : undefined;
+        const evalLanguageMax =
+          typeof evalBlock?.props?.languageMax === 'number' && evalBlock.props.languageMax > 0
+            ? evalBlock.props.languageMax
+            : undefined;
+        const evalTotalMarks =
+          typeof evalBlock?.props?.totalMarks === 'number' && evalBlock.props.totalMarks > 0
+            ? evalBlock.props.totalMarks
+            : totalMarks;
+        const marksLimits = {
+          ...(evalContentMax !== undefined ? { contentMax: evalContentMax } : {}),
+          ...(evalLanguageMax !== undefined ? { languageMax: evalLanguageMax } : {}),
+          totalMax: evalTotalMarks
+        };
+
+        return (
+          <GlobalPromptManager
+            promptEntries={promptEntries}
+            canvasBlocks={templateSchema.blocks}
+            marksLimits={marksLimits}
+            onValidationChange={setPromptValidationError}
+            onChangePrompts={(next) => {
+              setPromptEntries(next);
+              setIsDirty(true);
+            }}
+          />
+        );
+      })()}
 
       {activeTab === 'preview' && (
         <LivePreviewPane

@@ -74,6 +74,7 @@ export const PersistedReportSchema = z.object({
   id: z.string(),
   submissionId: z.string(),
   exerciseCode: z.string(),
+  exerciseTitle: z.string().optional(),
   promptVersion: z.number().int(),
   studentName: z.string(),
   studentClass: z.string().nullable(),

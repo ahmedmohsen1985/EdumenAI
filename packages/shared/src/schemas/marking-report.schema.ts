@@ -1,32 +1,27 @@
 import { z } from 'zod';
+import type { MarkingMarksLimits } from './json-schemas.js';
 
 /**
- * Unified Standard JSON Schema for Exercise 4 Marking Reports.
+ * Unified Standard JSON Schema for Assessment Marking Reports.
  * Compatible with OpenAI strict json_schema, Anthropic tool input_schema,
  * OpenRouter, and Gemini.
- *
- * NOTE: This Zod contract is a verbatim translation of the golden JSON schema
- * used by the Exercise 4 POC. Do not alter field names, types, or semantics.
  */
 
-export const MarksSchema = z.object({
-  content: z
-    .number()
-    .int()
-    .min(0)
-    .max(8)
-    .describe('Content & Communication mark out of 8'),
-  content_max: z.number().int().describe('Always 8'),
-  language: z
-    .number()
-    .int()
-    .min(0)
-    .max(15)
-    .describe('Language mark out of 15'),
-  language_max: z.number().int().describe('Always 15'),
-  total: z.number().int().min(0).max(23).describe('Total mark out of 23'),
-  total_max: z.number().int().describe('Always 23')
-});
+export const MarksSchema = z
+  .object({
+    content: z.number().int().min(0).describe('Content & Communication mark'),
+    content_max: z.number().int().positive().describe('Maximum Content & Communication mark'),
+    language: z.number().int().min(0).describe('Language mark'),
+    language_max: z.number().int().positive().describe('Maximum Language mark'),
+    total: z.number().int().min(0).describe('Total mark'),
+    total_max: z.number().int().positive().describe('Maximum total mark')
+  })
+  .refine(
+    (m) => m.content <= m.content_max && m.language <= m.language_max && m.total <= m.total_max,
+    {
+      message: 'Awarded marks cannot exceed maximum marks.'
+    }
+  );
 
 export const JustificationSchema = z.object({
   content: z
@@ -63,6 +58,23 @@ export const MarkingReportSchema = z.object({
       "Full, complete polished student text covering 100% of the student draft from the first word to the very last concluding sentence without cutting off or stopping early. Highlight corrections using plain <mark>word</mark> tags (no class attribute or quotes). Never tag single letters."
     )
 });
+
+export function createMarkingReportSchema(limits: MarkingMarksLimits) {
+  return z.object({
+    marks: z.object({
+      content: z.number().int().min(0).max(limits.contentMax),
+      content_max: z.literal(limits.contentMax),
+      language: z.number().int().min(0).max(limits.languageMax),
+      language_max: z.literal(limits.languageMax),
+      total: z.number().int().min(0).max(limits.totalMax),
+      total_max: z.literal(limits.totalMax)
+    }),
+    justification: JustificationSchema,
+    errors: z.array(ErrorItemSchema),
+    content_feedback: z.array(z.string()),
+    corrected_version: z.string()
+  });
+}
 
 export type Marks = z.infer<typeof MarksSchema>;
 export type Justification = z.infer<typeof JustificationSchema>;

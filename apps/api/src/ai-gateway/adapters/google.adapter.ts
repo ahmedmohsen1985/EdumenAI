@@ -91,15 +91,27 @@ export async function callGoogleAdapter({
     reqConfig.responseSchema = convertToGeminiSchema(jsonSchema);
   }
 
-  const configuredThinking =
+  const explicitReasoning =
     typeof reasoningConfig?.thinkingLevel === 'string'
       ? reasoningConfig.thinkingLevel
-      : taskType === 'vision'
+      : typeof reasoningConfig?.effort === 'string'
+        ? reasoningConfig.effort
+        : undefined;
+
+  if (explicitReasoning !== undefined) {
+    const thinkingRaw = explicitReasoning.trim().toUpperCase();
+    if (thinkingRaw && thinkingRaw !== 'NONE' && THINKING_LEVEL_MAP[thinkingRaw]) {
+      reqConfig.thinkingConfig = { thinkingLevel: THINKING_LEVEL_MAP[thinkingRaw] };
+    }
+  } else {
+    const envThinking =
+      taskType === 'vision'
         ? process.env.GEMINI_VISION_THINKING_LEVEL || ''
         : process.env.GEMINI_EVAL_THINKING_LEVEL || '';
-  const thinkingRaw = configuredThinking.trim().toUpperCase();
-  if (thinkingRaw && THINKING_LEVEL_MAP[thinkingRaw]) {
-    reqConfig.thinkingConfig = { thinkingLevel: THINKING_LEVEL_MAP[thinkingRaw] };
+    const thinkingRaw = envThinking.trim().toUpperCase();
+    if (thinkingRaw && thinkingRaw !== 'NONE' && THINKING_LEVEL_MAP[thinkingRaw]) {
+      reqConfig.thinkingConfig = { thinkingLevel: THINKING_LEVEL_MAP[thinkingRaw] };
+    }
   }
 
   const response = await ai.models.generateContent({

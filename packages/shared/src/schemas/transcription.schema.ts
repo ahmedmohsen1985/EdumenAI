@@ -4,9 +4,6 @@ import { z } from 'zod';
  * Unified Structured JSON Schema for Calibrated Two-Step Forensic OCR Transcription.
  * Calibrates to the student's handwriting style before auditing genuine errors to
  * avoid both autocorrect and phantom gibberish.
- *
- * NOTE: This Zod contract is a verbatim translation of the golden JSON schema
- * used by the Exercise 4 POC. Do not alter field names, types, or semantics.
  */
 
 export const TranscriptionSchema = z.object({

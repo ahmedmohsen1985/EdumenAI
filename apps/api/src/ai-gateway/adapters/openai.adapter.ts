@@ -68,7 +68,7 @@ export async function callOpenAiCompatibleAdapter({
     const appName =
       typeof extraConfig?.appName === 'string' && extraConfig.appName.trim()
         ? extraConfig.appName.trim()
-        : process.env.OPENROUTER_APP_NAME || 'EdumenAI Exercise 4';
+        : process.env.OPENROUTER_APP_NAME || 'EdumenAI';
 
     headers['HTTP-Referer'] = siteUrl;
     headers['X-Title'] = appName;

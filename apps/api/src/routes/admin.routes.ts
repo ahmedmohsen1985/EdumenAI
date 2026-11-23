@@ -12,6 +12,8 @@ import {
 import { adminAuthMiddleware } from '../middleware/admin-auth.middleware.js';
 import {
   createExerciseAdmin,
+  deleteExerciseAdmin,
+  duplicateExerciseAdmin,
   getExerciseAdmin,
   listAllExercisesAdmin,
   publishExerciseAdmin,
@@ -105,6 +107,26 @@ router.post('/exercises/:code/publish', async (req: Request, res: Response, next
     const parsedBody = PublishExerciseBodySchema.parse(req.body);
     const data = await publishExerciseAdmin(code, parsedBody?.versionId);
     res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/exercises/:code', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const code = String(req.params.code || '');
+    const data = await deleteExerciseAdmin(code);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/exercises/:code/duplicate', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const code = String(req.params.code || '');
+    const data = await duplicateExerciseAdmin(code, req.body);
+    res.status(201).json({ success: true, data });
   } catch (err) {
     next(err);
   }

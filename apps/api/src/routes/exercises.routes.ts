@@ -9,7 +9,7 @@ import {
 } from '../services/exercise.service.js';
 import { createEvaluatedSubmission } from '../services/submission.service.js';
 import { isAdminAuthorized } from '../middleware/admin-auth.middleware.js';
-import { evaluateArticle, runDynamicOcr } from '../ai-gateway/exercise4.pipeline.js';
+import { evaluateAssessment, runDynamicOcr } from '../ai-gateway/evaluation.pipeline.js';
 import { AiServiceError } from '../ai-gateway/index.js';
 import {
   notifyStudent,
@@ -279,7 +279,7 @@ router.post(
         totalMax
       };
 
-      const evaluationResult = await evaluateArticle({
+      const evaluationResult = await evaluateAssessment({
         studentName: parsedBody.student.name,
         taskPrompt: parsedBody.taskPrompt,
         studentText: parsedBody.finalText,

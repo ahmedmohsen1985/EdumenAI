@@ -7,17 +7,21 @@ import type { ExerciseSkill } from '@edumenai/shared';
 import {
   AlertCircle,
   CheckCircle2,
+  Copy,
   ExternalLink,
   FileEdit,
   Layers,
   Loader2,
   Plus,
+  Trash2,
   Wrench,
   X
 } from 'lucide-react';
 import {
   ADMIN_EXERCISES_CACHE_KEYS,
   createAdminExercise,
+  deleteAdminExercise,
+  duplicateAdminExercise,
   fetchAdminExercises,
   type AdminExerciseSummary
 } from '../../lib/admin-exercises-api';
@@ -60,6 +64,19 @@ export function AdminExercisesList(): React.ReactElement {
   const [description, setDescription] = useState<string>('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState<boolean>(false);
+
+  // Duplicate Exercise modal state
+  const [duplicateSource, setDuplicateSource] = useState<AdminExerciseSummary | null>(null);
+  const [dupTitle, setDupTitle] = useState<string>('');
+  const [dupCode, setDupCode] = useState<string>('');
+  const [dupCodeManuallyEdited, setDupCodeManuallyEdited] = useState<boolean>(false);
+  const [dupError, setDupError] = useState<string | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState<boolean>(false);
+
+  // Delete Exercise inline confirmation state
+  const [confirmDeleteCode, setConfirmDeleteCode] = useState<string | null>(null);
+  const [deletingCode, setDeletingCode] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadExercises = async (options?: { silent?: boolean; force?: boolean }): Promise<void> => {
     if (!options?.silent) {
@@ -157,6 +174,60 @@ export function AdminExercisesList(): React.ReactElement {
       setCreateError(err instanceof Error ? err.message : 'Failed to create exercise.');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const openDuplicateModal = (ex: AdminExerciseSummary): void => {
+    const nextTitle = `${ex.title} (Copy)`;
+    setDuplicateSource(ex);
+    setDupTitle(nextTitle);
+    setDupCode(slugifyTitle(nextTitle));
+    setDupCodeManuallyEdited(false);
+    setDupError(null);
+  };
+
+  const handleDuplicateSubmit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (!duplicateSource) return;
+    setDupError(null);
+
+    const trimmedCode = dupCode.trim().toLowerCase();
+    if (!/^[a-z0-9-]+$/.test(trimmedCode)) {
+      setDupError('Exercise code must be a lowercase slug containing only a-z, 0-9, and -.');
+      return;
+    }
+
+    if (!dupTitle.trim()) {
+      setDupError('Title is required.');
+      return;
+    }
+
+    setIsDuplicating(true);
+    try {
+      const created = await duplicateAdminExercise(duplicateSource.code, {
+        code: trimmedCode,
+        title: dupTitle.trim()
+      });
+      setDuplicateSource(null);
+      router.push(`/admin/exercises/${encodeURIComponent(created.code)}/builder`);
+    } catch (err: unknown) {
+      setDupError(err instanceof Error ? err.message : 'Failed to duplicate exercise.');
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
+  const handleConfirmDelete = async (targetCode: string): Promise<void> => {
+    setDeletingCode(targetCode);
+    setDeleteError(null);
+    try {
+      await deleteAdminExercise(targetCode);
+      setExercises((prev) => prev.filter((item) => item.code !== targetCode));
+      setConfirmDeleteCode(null);
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete exercise.');
+    } finally {
+      setDeletingCode(null);
     }
   };
 
@@ -305,29 +376,177 @@ export function AdminExercisesList(): React.ReactElement {
                 </div>
               </div>
 
-              <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-                <Link
-                  href={`/admin/exercises/${encodeURIComponent(ex.code)}/builder`}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-navy/90"
-                >
-                  <Wrench className="h-4 w-4 text-brand-gold" />
-                  Open Builder
-                </Link>
-
-                {ex.activeVersion && (
+              <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
+                <div className="flex flex-wrap items-center gap-2">
                   <Link
-                    href={`/exercises/${encodeURIComponent(ex.code)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    href={`/admin/exercises/${encodeURIComponent(ex.code)}/builder`}
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-navy/90"
                   >
-                    <span>Student View</span>
-                    <ExternalLink className="h-3.5 w-3.5" />
+                    <Wrench className="h-4 w-4 text-brand-gold" />
+                    Open Builder
                   </Link>
+
+                  {ex.activeVersion && (
+                    <Link
+                      href={`/exercises/${encodeURIComponent(ex.code)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <span>Student View</span>
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => openDuplicateModal(ex)}
+                    title="Duplicate Exercise"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Duplicate</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setConfirmDeleteCode(ex.code);
+                    }}
+                    title="Delete Exercise"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+
+                {confirmDeleteCode === ex.code && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-900 space-y-2">
+                    <p className="font-semibold">
+                      Delete &quot;{ex.title}&quot;? All versions, submissions, and evaluation
+                      reports for this exercise will be permanently deleted.
+                    </p>
+                    {deleteError && <p className="font-medium text-red-700">{deleteError}</p>}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleConfirmDelete(ex.code)}
+                        disabled={deletingCode === ex.code}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {deletingCode === ex.code && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        )}
+                        Confirm Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDeleteCode(null);
+                          setDeleteError(null);
+                        }}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Duplicate Exercise Modal */}
+      {duplicateSource && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="duplicate-exercise-title"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 id="duplicate-exercise-title" className="text-lg font-bold text-brand-navy">
+                Duplicate Exercise
+              </h2>
+              <button
+                type="button"
+                onClick={() => setDuplicateSource(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => void handleDuplicateSubmit(e)} className="mt-4 space-y-4">
+              <p className="text-xs text-slate-600">
+                Clones all template blocks, prompt entries, and marking schema from{' '}
+                <strong className="text-brand-navy">{duplicateSource.title}</strong> into a new
+                draft exercise.
+              </p>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700">New Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={dupTitle}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDupTitle(val);
+                    if (!dupCodeManuallyEdited) {
+                      setDupCode(slugifyTitle(val));
+                    }
+                  }}
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-brand-navy focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700">
+                  New URL Slug (code) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={dupCode}
+                  onChange={(e) => {
+                    setDupCodeManuallyEdited(true);
+                    setDupCode(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''));
+                  }}
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:border-brand-navy focus:outline-none"
+                />
+              </div>
+
+              {dupError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                  {dupError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setDuplicateSource(null)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isDuplicating}
+                  className="inline-flex items-center gap-2 rounded-xl bg-brand-navy px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy/90 disabled:opacity-60"
+                >
+                  {isDuplicating && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Duplicate &amp; Open Builder
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

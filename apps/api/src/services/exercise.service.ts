@@ -1,8 +1,7 @@
 import { Prisma, type Exercise, type PromptVersion } from '@prisma/client';
 import { z } from 'zod';
 import {
-  DEFAULT_EX4_TEMPLATE,
-  EX4_TASK_EXTRACTION_PROMPT,
+  buildMarkingJsonSchema,
   ExerciseSkillSchema,
   MARKING_JSON_SCHEMA,
   PromptEntrySchema,
@@ -143,15 +142,23 @@ export const SaveExerciseDraftAdminSchema = z.object({
 
 export type SaveExerciseDraftAdminInput = z.infer<typeof SaveExerciseDraftAdminSchema>;
 
-function parseTemplateSchema(raw: Prisma.JsonValue | null, code: string): TemplateConfig {
+export const DuplicateExerciseAdminSchema = z.object({
+  code: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9-]+$/, 'Exercise code must be a lowercase slug (a-z, 0-9, -).'),
+  title: z.string().min(1).max(200)
+});
+
+export type DuplicateExerciseAdminInput = z.infer<typeof DuplicateExerciseAdminSchema>;
+
+function parseTemplateSchema(raw: Prisma.JsonValue | null): TemplateConfig {
   if (raw !== null && raw !== undefined) {
     const parsed = TemplateSchema.safeParse(raw);
     if (parsed.success) {
       return parsed.data;
     }
-  }
-  if (code === 'ex4') {
-    return DEFAULT_EX4_TEMPLATE;
   }
   return TemplateSchema.parse({
     schemaVersion: 1,
@@ -171,50 +178,10 @@ function parsePromptEntries(version: PromptVersion): PromptEntry[] {
       return parsed.data;
     }
   }
-
-  // Fallback synthesis from legacy PromptVersion columns
-  const entries: PromptEntry[] = [];
-  entries.push({
-    key: 'task_extraction_prompt',
-    label: 'Task Question OCR Prompt',
-    taskType: 'vision',
-    content: EX4_TASK_EXTRACTION_PROMPT,
-    outputSchema: null
-  });
-  if (version.transcriptionPrompt) {
-    entries.push({
-      key: 'transcription_prompt',
-      label: 'Handwriting OCR Prompt',
-      taskType: 'vision',
-      content: version.transcriptionPrompt,
-      outputSchema: null
-    });
-  }
-  if (version.evaluationPrompt) {
-    entries.push({
-      key: 'marking_protocol',
-      label: 'Core Marking Protocol',
-      taskType: 'evaluation',
-      content: version.evaluationPrompt,
-      outputSchema:
-        version.markingSchema && typeof version.markingSchema === 'object' && !Array.isArray(version.markingSchema)
-          ? (version.markingSchema as Record<string, unknown>)
-          : null
-    });
-  }
-  if (version.rubricPrompt) {
-    entries.push({
-      key: 'rubric_and_anchors',
-      label: 'Rubric & Anchors',
-      taskType: 'evaluation',
-      content: version.rubricPrompt,
-      outputSchema: null
-    });
-  }
-  return entries;
+  return [];
 }
 
-function mapAdminVersion(version: PromptVersion, code: string): AdminPromptVersionView {
+function mapAdminVersion(version: PromptVersion): AdminPromptVersionView {
   const markingSchema =
     version.markingSchema && typeof version.markingSchema === 'object' && !Array.isArray(version.markingSchema)
       ? (version.markingSchema as Record<string, unknown>)
@@ -225,7 +192,7 @@ function mapAdminVersion(version: PromptVersion, code: string): AdminPromptVersi
     version: version.version,
     status: version.status,
     isActive: version.isActive,
-    templateSchema: parseTemplateSchema(version.templateSchema, code),
+    templateSchema: parseTemplateSchema(version.templateSchema),
     promptEntries: parsePromptEntries(version),
     markingSchema,
     publishedAt: version.publishedAt ? version.publishedAt.toISOString() : null,
@@ -266,6 +233,11 @@ export async function listPublishedExercises(): Promise<PublishedExerciseSummary
           where: {
             status: 'PUBLISHED',
             isActive: true
+          },
+          select: {
+            id: true,
+            version: true,
+            publishedAt: true
           },
           orderBy: { version: 'desc' },
           take: 1
@@ -316,7 +288,7 @@ export async function getPublishedExerciseByCode(code: string): Promise<Publishe
     }
 
     const active = exercise.promptVersions[0]!;
-    const templateSchema = parseTemplateSchema(active.templateSchema, exercise.code);
+    const templateSchema = parseTemplateSchema(active.templateSchema);
     const promptEntries = parsePromptEntries(active);
 
     const promptMeta: PublicPromptMeta[] = promptEntries.map((entry) => ({
@@ -404,7 +376,7 @@ export async function resolveVersionForExecution(
     exercise,
     version,
     promptEntries: parsePromptEntries(version),
-    templateSchema: parseTemplateSchema(version.templateSchema, exercise.code)
+    templateSchema: parseTemplateSchema(version.templateSchema)
   };
 }
 
@@ -413,6 +385,14 @@ export async function listAllExercisesAdmin(): Promise<AdminExerciseSummary[]> {
     const exercises = await prisma.exercise.findMany({
       include: {
         promptVersions: {
+          select: {
+            id: true,
+            version: true,
+            status: true,
+            isActive: true,
+            publishedAt: true,
+            updatedAt: true
+          },
           orderBy: { version: 'desc' }
         }
       },
@@ -459,7 +439,9 @@ export async function createExerciseAdmin(
 
   const defaultTemplate = buildDefaultTemplateForNewExercise(input.title, input.totalMarks);
   const defaultPrompts = buildDefaultPromptEntriesForNewExercise();
-  const defaultMarkingSchema = MARKING_JSON_SCHEMA as unknown as Prisma.InputJsonValue;
+  const defaultMarkingSchema = buildMarkingJsonSchema({
+    totalMax: input.totalMarks
+  }) as unknown as Prisma.InputJsonValue;
 
   const created = await prisma.$transaction(async (tx) => {
     const exercise = await tx.exercise.create({
@@ -490,9 +472,7 @@ export async function createExerciseAdmin(
     return { exercise, versions: [draftVersion] };
   }, TX_OPTIONS);
 
-  appCache.delPrefix('exercises:');
-
-  return {
+  const detail: AdminExerciseDetail = {
     id: created.exercise.id,
     code: created.exercise.code,
     skill: created.exercise.skill,
@@ -501,8 +481,13 @@ export async function createExerciseAdmin(
     totalMarks: created.exercise.totalMarks,
     createdAt: created.exercise.createdAt.toISOString(),
     updatedAt: created.exercise.updatedAt.toISOString(),
-    versions: created.versions.map((v) => mapAdminVersion(v, created.exercise.code))
+    versions: created.versions.map((v) => mapAdminVersion(v))
   };
+
+  appCache.delPrefix('exercises:');
+  appCache.set(`exercises:admin:code:${detail.code}`, detail, 60_000);
+
+  return detail;
 }
 
 export async function getExerciseAdmin(code: string): Promise<AdminExerciseDetail> {
@@ -511,7 +496,8 @@ export async function getExerciseAdmin(code: string): Promise<AdminExerciseDetai
       where: { code },
       include: {
         promptVersions: {
-          orderBy: { version: 'desc' }
+          orderBy: { version: 'desc' },
+          take: 3
         }
       }
     });
@@ -529,7 +515,7 @@ export async function getExerciseAdmin(code: string): Promise<AdminExerciseDetai
       totalMarks: exercise.totalMarks,
       createdAt: exercise.createdAt.toISOString(),
       updatedAt: exercise.updatedAt.toISOString(),
-      versions: exercise.promptVersions.map((v) => mapAdminVersion(v, exercise.code))
+      versions: exercise.promptVersions.map((v) => mapAdminVersion(v))
     };
   });
 }
@@ -592,7 +578,7 @@ export async function saveExerciseDraftAdmin(
       const nextPromptEntries =
         validatedPromptEntries ?? parsePromptEntries(existingDraft);
       const nextTemplateSchema =
-        validatedTemplate ?? parseTemplateSchema(existingDraft.templateSchema, exercise.code);
+        validatedTemplate ?? parseTemplateSchema(existingDraft.templateSchema);
 
       draftVersion = await tx.promptVersion.update({
         where: { id: existingDraft.id },
@@ -620,7 +606,7 @@ export async function saveExerciseDraftAdmin(
       const baseTemplateSchema =
         validatedTemplate ??
         (activePublished
-          ? parseTemplateSchema(activePublished.templateSchema, exercise.code)
+          ? parseTemplateSchema(activePublished.templateSchema)
           : buildDefaultTemplateForNewExercise(exercise.title, exercise.totalMarks));
       const baseMarkingSchema =
         input.markingSchema ??
@@ -646,7 +632,8 @@ export async function saveExerciseDraftAdmin(
       where: { id: exercise.id },
       include: {
         promptVersions: {
-          orderBy: { version: 'desc' }
+          orderBy: { version: 'desc' },
+          take: 3
         }
       }
     });
@@ -654,23 +641,24 @@ export async function saveExerciseDraftAdmin(
     return { refreshed, draftVersion };
   }, TX_OPTIONS);
 
+  const exerciseDetail: AdminExerciseDetail = {
+    id: result.refreshed.id,
+    code: result.refreshed.code,
+    skill: result.refreshed.skill,
+    title: result.refreshed.title,
+    description: result.refreshed.description,
+    totalMarks: result.refreshed.totalMarks,
+    createdAt: result.refreshed.createdAt.toISOString(),
+    updatedAt: result.refreshed.updatedAt.toISOString(),
+    versions: result.refreshed.promptVersions.map((v) => mapAdminVersion(v))
+  };
+
   appCache.delPrefix('exercises:');
+  appCache.set(`exercises:admin:code:${code}`, exerciseDetail, 60_000);
 
   return {
-    exercise: {
-      id: result.refreshed.id,
-      code: result.refreshed.code,
-      skill: result.refreshed.skill,
-      title: result.refreshed.title,
-      description: result.refreshed.description,
-      totalMarks: result.refreshed.totalMarks,
-      createdAt: result.refreshed.createdAt.toISOString(),
-      updatedAt: result.refreshed.updatedAt.toISOString(),
-      versions: result.refreshed.promptVersions.map((v) =>
-        mapAdminVersion(v, result.refreshed.code)
-      )
-    },
-    draftVersion: mapAdminVersion(result.draftVersion, result.refreshed.code)
+    exercise: exerciseDetail,
+    draftVersion: mapAdminVersion(result.draftVersion)
   };
 }
 
@@ -742,7 +730,8 @@ export async function publishExerciseAdmin(
       where: { id: exercise.id },
       include: {
         promptVersions: {
-          orderBy: { version: 'desc' }
+          orderBy: { version: 'desc' },
+          take: 3
         }
       }
     });
@@ -750,22 +739,123 @@ export async function publishExerciseAdmin(
     return { refreshed, published };
   }, TX_OPTIONS);
 
+  const exerciseDetail: AdminExerciseDetail = {
+    id: result.refreshed.id,
+    code: result.refreshed.code,
+    skill: result.refreshed.skill,
+    title: result.refreshed.title,
+    description: result.refreshed.description,
+    totalMarks: result.refreshed.totalMarks,
+    createdAt: result.refreshed.createdAt.toISOString(),
+    updatedAt: result.refreshed.updatedAt.toISOString(),
+    versions: result.refreshed.promptVersions.map((v) => mapAdminVersion(v))
+  };
+
   appCache.delPrefix('exercises:');
+  appCache.set(`exercises:admin:code:${code}`, exerciseDetail, 60_000);
 
   return {
-    exercise: {
-      id: result.refreshed.id,
-      code: result.refreshed.code,
-      skill: result.refreshed.skill,
-      title: result.refreshed.title,
-      description: result.refreshed.description,
-      totalMarks: result.refreshed.totalMarks,
-      createdAt: result.refreshed.createdAt.toISOString(),
-      updatedAt: result.refreshed.updatedAt.toISOString(),
-      versions: result.refreshed.promptVersions.map((v) =>
-        mapAdminVersion(v, result.refreshed.code)
-      )
-    },
-    publishedVersion: mapAdminVersion(result.published, result.refreshed.code)
+    exercise: exerciseDetail,
+    publishedVersion: mapAdminVersion(result.published)
   };
+}
+
+export async function deleteExerciseAdmin(
+  code: string
+): Promise<{ deleted: true; code: string }> {
+  await prisma.$transaction(async (tx) => {
+    const exercise = await tx.exercise.findUnique({
+      where: { code },
+      select: { id: true }
+    });
+
+    if (!exercise) {
+      throw new HttpError(404, `Exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
+    }
+
+    await tx.submission.deleteMany({ where: { exerciseId: exercise.id } });
+    await tx.promptVersion.deleteMany({ where: { exerciseId: exercise.id } });
+    await tx.exercise.delete({ where: { id: exercise.id } });
+  }, TX_OPTIONS);
+
+  appCache.delPrefix('exercises:');
+  return { deleted: true, code };
+}
+
+export async function duplicateExerciseAdmin(
+  sourceCode: string,
+  rawInput: DuplicateExerciseAdminInput
+): Promise<AdminExerciseDetail> {
+  const input = DuplicateExerciseAdminSchema.parse(rawInput);
+
+  const source = await prisma.exercise.findUnique({
+    where: { code: sourceCode },
+    include: {
+      promptVersions: {
+        orderBy: { version: 'desc' },
+        take: 1
+      }
+    }
+  });
+
+  if (!source) {
+    throw new HttpError(404, `Exercise "${sourceCode}" not found.`, 'EXERCISE_NOT_FOUND');
+  }
+
+  const latestVersion = source.promptVersions[0] ?? null;
+  const clonedTemplate = latestVersion
+    ? parseTemplateSchema(latestVersion.templateSchema)
+    : buildDefaultTemplateForNewExercise(input.title, source.totalMarks);
+  const clonedPrompts = latestVersion
+    ? parsePromptEntries(latestVersion)
+    : buildDefaultPromptEntriesForNewExercise();
+  const clonedMarkingSchema =
+    latestVersion?.markingSchema ??
+    (buildMarkingJsonSchema({ totalMax: source.totalMarks }) as unknown as Prisma.InputJsonValue);
+
+  const created = await prisma.$transaction(async (tx) => {
+    const exercise = await tx.exercise.create({
+      data: {
+        code: input.code,
+        skill: source.skill,
+        title: input.title.trim(),
+        description: source.description,
+        totalMarks: source.totalMarks
+      }
+    });
+
+    const draftVersion = await tx.promptVersion.create({
+      data: {
+        exerciseId: exercise.id,
+        version: 1,
+        status: 'DRAFT',
+        isActive: false,
+        transcriptionPrompt: latestVersion?.transcriptionPrompt ?? '',
+        evaluationPrompt: latestVersion?.evaluationPrompt ?? '',
+        rubricPrompt: latestVersion?.rubricPrompt ?? '',
+        markingSchema: clonedMarkingSchema as Prisma.InputJsonValue,
+        templateSchema: clonedTemplate as unknown as Prisma.InputJsonValue,
+        promptEntries: clonedPrompts as unknown as Prisma.InputJsonValue
+      }
+    });
+
+    return { exercise, versions: [draftVersion] };
+  }, TX_OPTIONS);
+
+  const detail: AdminExerciseDetail = {
+    id: created.exercise.id,
+    code: created.exercise.code,
+    skill: created.exercise.skill,
+    title: created.exercise.title,
+    description: created.exercise.description,
+    totalMarks: created.exercise.totalMarks,
+    createdAt: created.exercise.createdAt.toISOString(),
+    updatedAt: created.exercise.updatedAt.toISOString(),
+    versions: created.versions.map((v) => mapAdminVersion(v))
+  };
+
+  appCache.delPrefix('exercises:');
+  appCache.set(`exercises:admin:code:${detail.code}`, detail, 60_000);
+
+  return detail;
 }

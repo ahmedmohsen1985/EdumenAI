@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   buildMarkingJsonSchema,
-  EX4_TASK_EXTRACTION_PROMPT,
+  DEFAULT_TASK_EXTRACTION_PROMPT,
   TRANSCRIPTION_JSON_SCHEMA,
   type AiTaskType,
   type MarkingMarksLimits,
@@ -44,7 +44,7 @@ function getStarterPresets(
       key: 'task_extraction_prompt',
       label: 'Task Question OCR Prompt',
       taskType: 'vision',
-      content: EX4_TASK_EXTRACTION_PROMPT,
+      content: DEFAULT_TASK_EXTRACTION_PROMPT,
       outputSchema: null
     },
     {

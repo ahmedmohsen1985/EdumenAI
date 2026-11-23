@@ -82,7 +82,7 @@ export async function callAnthropicAdapter({
     body.tools = [
       {
         name: toolName,
-        description: 'Submit the complete Exercise 4 marking report matching the schema.',
+        description: 'Submit the complete assessment marking report matching the schema.',
         input_schema: jsonSchema
       }
     ];

@@ -1,8 +1,6 @@
-import fs from 'node:fs';
 import {
   buildMarkingJsonSchema,
   createMarkingReportSchema,
-  EX4_TASK_EXTRACTION_PROMPT,
   isLegacyEx4MarkingSchema,
   MARKING_JSON_SCHEMA,
   TRANSCRIPTION_JSON_SCHEMA,
@@ -12,7 +10,7 @@ import {
   type TranscriptionMeta
 } from '@edumenai/shared';
 import { logger } from '../lib/logger.js';
-import { resolvePromptPath } from '../lib/paths.js';
+import { HttpError } from '../services/exercise.service.js';
 import {
   AiServiceError,
   invokeAiModel,
@@ -21,16 +19,6 @@ import {
   type AiFilePayload,
   type AiUsageMetrics
 } from './index.js';
-
-function readPromptFile(fileName: string): string {
-  const filePath = resolvePromptPath(fileName);
-  try {
-    return fs.readFileSync(filePath, 'utf-8');
-  } catch (err) {
-    logger.error({ err, filePath }, 'Failed to read prompt file');
-    throw new Error(`Missing prompt file: ${filePath}`);
-  }
-}
 
 function buildFilePayload(fileBuffer: Buffer, mimeType: string, baseName: string): AiFilePayload {
   const normalizedMime =
@@ -120,7 +108,7 @@ export function extractAndParseJson(
 
 /**
  * Generic whitespace and meta-tag cleanup for OCR output.
- * Strictly avoids altering student words, spellings, or essay-specific text.
+ * Strictly avoids altering student words, spellings, or submission-specific text.
  */
 export function sanitizeTranscription(text: string): string {
   if (!text) return '';
@@ -403,68 +391,6 @@ async function runStructuredHandwritingOcr(
   };
 }
 
-export async function transcribeHandwriting(
-  fileBuffer: Buffer,
-  mimeType: string,
-  customSystemPrompt?: string
-): Promise<{
-  transcription: string;
-  transcriptionMeta?: TranscriptionMeta;
-  provider: string;
-  model: string;
-  usage: AiUsageMetrics;
-}> {
-  const prompt = customSystemPrompt?.trim()
-    ? customSystemPrompt
-    : readPromptFile('ex4_transcription_prompt.txt');
-
-  return runStructuredHandwritingOcr(
-    fileBuffer,
-    mimeType,
-    prompt,
-    TRANSCRIPTION_JSON_SCHEMA as unknown as Record<string, unknown>
-  );
-}
-
-export async function extractTaskQuestion(
-  fileBuffer: Buffer,
-  mimeType: string,
-  customSystemPrompt?: string
-): Promise<{
-  taskQuestion: string;
-  provider: string;
-  model: string;
-  usage: AiUsageMetrics;
-}> {
-  const file = buildFilePayload(fileBuffer, mimeType, 'exam_question');
-  const systemPrompt = customSystemPrompt?.trim()
-    ? customSystemPrompt
-    : EX4_TASK_EXTRACTION_PROMPT;
-
-  const result = await invokeAiModel({
-    taskType: 'vision',
-    operationName: 'TaskExtraction',
-    systemPrompt,
-    userPrompt:
-      'Extract the complete Exercise 4 exam question verbatim as clean plain text without Markdown.',
-    file,
-    temperature: 0.0,
-    maxOutputTokens: 4096
-  });
-
-  const taskQuestion = result.text
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .trim();
-
-  return {
-    taskQuestion,
-    provider: result.provider,
-    model: result.model,
-    usage: result.usage
-  };
-}
-
 export async function runDynamicOcr({
   fileBuffer,
   mimeType,
@@ -666,14 +592,14 @@ async function recoverCompleteCorrectedVersion(
       ? errors.map((e) => `- "${e.original ?? ''}" -> "${e.correction ?? ''}"`).join('\n')
       : 'Fix all spelling, grammar, capitalisation, punctuation, and awkward phrasing slips.';
 
-  const recoverySystemPrompt = `You are an Oxford AQA IGCSE ESL copy-editor.
+  const recoverySystemPrompt = `You are an expert English assessment copy-editor.
 Output ONLY the COMPLETE corrected version of the student's entire submission from the very first word to the very last concluding sentence.
 Rules:
 1. Cover 100% of the student's paragraphs and sentences without cutting off or summarizing.
 2. Wrap every corrected word or phrase in plain <mark>word</mark> tags (no class attribute, always wrap whole words, never single letters).
-3. Output ONLY the corrected HTML/text article itself—no JSON, no markdown code blocks, and no intro or outro commentary.`;
+3. Output ONLY the corrected HTML/text response itself—no JSON, no markdown code blocks, and no intro or outro commentary.`;
 
-  const recoveryUserPrompt = `ORIGINAL STUDENT DRAFT:\n${studentText}\n\nERRORS IDENTIFIED:\n${errorsSummary}\n\nWrite the complete corrected article from start to finish:`;
+  const recoveryUserPrompt = `ORIGINAL STUDENT DRAFT:\n${studentText}\n\nERRORS IDENTIFIED:\n${errorsSummary}\n\nWrite the complete corrected version from start to finish:`;
 
   const result = await invokeAiModel({
     taskType: 'evaluation',
@@ -696,7 +622,7 @@ Rules:
   };
 }
 
-export interface EvaluateArticleParams {
+export interface EvaluateAssessmentParams {
   studentName?: string;
   taskPrompt: string;
   studentText: string;
@@ -705,23 +631,35 @@ export interface EvaluateArticleParams {
   marksLimits?: Partial<MarkingMarksLimits>;
 }
 
-export interface EvaluateArticleResult {
+export interface EvaluateAssessmentResult {
   report: MarkingReport;
   provider: string;
   model: string;
   usage: AiUsageMetrics;
 }
 
-export async function evaluateArticle({
+export async function evaluateAssessment({
   studentName,
   taskPrompt,
   studentText,
   systemPrompts,
   markingSchema,
   marksLimits
-}: EvaluateArticleParams): Promise<EvaluateArticleResult> {
+}: EvaluateAssessmentParams): Promise<EvaluateAssessmentResult> {
   if (!taskPrompt || !studentText) {
-    throw new Error('Task prompt and student text are required.');
+    throw new HttpError(400, 'Task prompt and student text are required.', 'VALIDATION_ERROR');
+  }
+
+  const validPrompts = Array.isArray(systemPrompts)
+    ? systemPrompts.map((p) => p.trim()).filter((p) => p.length > 0)
+    : [];
+
+  if (validPrompts.length === 0) {
+    throw new HttpError(
+      400,
+      'No evaluation prompt is configured for this exercise. Configure an evaluation prompt in Admin Studio -> Global Prompt Manager.',
+      'MISSING_EVALUATION_PROMPT'
+    );
   }
 
   const userMessage = `
@@ -739,11 +677,7 @@ OUTPUT REQUIREMENT:
 Return strictly valid JSON with keys: marks, justification, errors, content_feedback, corrected_version.
 `;
 
-  const resolvedPrompts =
-    Array.isArray(systemPrompts) && systemPrompts.length > 0
-      ? systemPrompts
-      : [readPromptFile('core_marking_protocol.txt'), readPromptFile('ex4_rubric_and_anchors.txt')];
-  const fullSystemInstruction = resolvedPrompts.join('\n\n');
+  const fullSystemInstruction = validPrompts.join('\n\n');
 
   const preLimits = resolveMarksLimits(marksLimits);
   const hasNonDefaultLimits =
@@ -758,7 +692,7 @@ Return strictly valid JSON with keys: marks, justification, errors, content_feed
 
   const initialResult = await invokeAiModel({
     taskType: 'evaluation',
-    operationName: 'ArticleEvaluation',
+    operationName: 'AssessmentEvaluation',
     systemPrompt: fullSystemInstruction,
     userPrompt: userMessage,
     jsonSchema: resolvedSchema,

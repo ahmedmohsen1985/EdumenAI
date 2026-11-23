@@ -10,7 +10,6 @@ import { AiServiceError } from './ai-gateway/index.js';
 import { HttpError } from './services/exercise.service.js';
 import healthRoutes from './routes/health.routes.js';
 import exercisesRoutes from './routes/exercises.routes.js';
-import exercise4Routes from './routes/exercise4.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 
@@ -41,7 +40,6 @@ export function createApp(): Express {
   app.use('/api/exercises', exercisesRoutes);
   app.use('/api/reports', reportsRoutes);
   app.use('/api/admin', adminRoutes);
-  app.use('/api', exercise4Routes);
 
   // 404 handler
   app.use((req: Request, res: Response): void => {

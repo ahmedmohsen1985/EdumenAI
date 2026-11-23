@@ -411,9 +411,7 @@ export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
   doc.rect(0, 29, pageWidth, 3, 'F');
 
   const exerciseLabel =
-    report.exerciseCode === 'ex4'
-      ? 'Exercise 4: Formal / Semi-Formal / Informal Writing'
-      : `Exercise: ${report.exerciseCode.toUpperCase()} (v${report.promptVersion})`;
+    report.exerciseTitle || `Assessment: ${report.exerciseCode.toUpperCase()}`;
 
   doc.setTextColor(...colours.white);
   doc.setFontSize(15);

@@ -384,14 +384,14 @@ export async function notifyStudent(
   telegramId: string,
   studentName: string,
   evaluation: Partial<MarkingReport>,
-  exerciseTitle = 'Exercise 4'
+  exerciseTitle = 'Assessment'
 ): Promise<TelegramApiResult | null> {
   if (!telegramId) return null;
 
   const firstName = studentName ? studentName.split(' ')[0] : 'Student';
   const errorCount = Array.isArray(evaluation.errors) ? evaluation.errors.length : 0;
   const marks = evaluation.marks;
-  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Exercise 4');
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Assessment');
 
   const msg = `
 🌟 <b>EdumenAI - ${safeTitle} Evaluation</b>
@@ -421,7 +421,7 @@ export async function sendTeacherAudit(
   finalOrEval?: string | Partial<MarkingReport>,
   maybeEval?: Partial<MarkingReport>,
   targetIds?: string[],
-  exerciseTitle = 'Exercise 4'
+  exerciseTitle = 'Assessment'
 ): Promise<Array<{ chatId: string; result: TelegramApiResult | null }>> {
   const resolvedTargets = await resolveTargetChatIds(targetIds);
   if (resolvedTargets.length === 0) {
@@ -446,7 +446,7 @@ export async function sendTeacherAudit(
   const marks = evaluation.marks;
   const snippet = studentText.trim();
   const classLabel = studentInfo.className || studentInfo.class || 'Class';
-  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Exercise 4');
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Assessment');
 
   const auditMsg = `
 📋 <b>AUDIT REPORT - ${safeTitle}</b>
@@ -454,7 +454,7 @@ export async function sendTeacherAudit(
 📱 <b>Telegram ID:</b> ${escapeTelegramHtml(studentInfo.telegram || studentInfo.telegramId || 'N/A')}
 📊 <b>Result:</b> <b>${marks?.total ?? 0}/${marks?.total_max ?? 23}</b> (Content: ${marks?.content ?? 0}/${marks?.content_max ?? 8}, Language: ${marks?.language ?? 0}/${marks?.language_max ?? 15})
 🔍 <b>Errors Flagged:</b> ${errorCount}
-🔒 <b>Mode:</b> Verbatim Handwriting OCR (Locked - Unedited)
+🔒 <b>Mode:</b> EdumenAI Dynamic Assessment
 
 📝 <b>Student Submission:</b>
 <code>${escapeTelegramHtml(snippet.substring(0, 1500))}</code>
@@ -474,7 +474,7 @@ export async function dispatchFullReportWithPdf({
   pdfBuffer,
   fileName,
   targetIds,
-  exerciseTitle = 'Exercise 4'
+  exerciseTitle = 'Assessment'
 }: {
   studentInfo: TelegramStudentInfo;
   evaluation: Partial<MarkingReport>;
@@ -496,7 +496,7 @@ export async function dispatchFullReportWithPdf({
   const marks = evaluation.marks;
   const classLabel = studentInfo.className || studentInfo.class || 'Class';
   const resolvedFileName = fileName || 'EdumenAI_Report.pdf';
-  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Exercise 4');
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Assessment');
 
   const resolvedTargets = await resolveTargetChatIds(targetIds);
   if (resolvedTargets.length > 0) {
@@ -505,7 +505,7 @@ export async function dispatchFullReportWithPdf({
 📱 <b>Telegram ID:</b> ${escapeTelegramHtml(studentInfo.telegram || studentInfo.telegramId || 'N/A')}
 📊 <b>Marks:</b> <b>${marks?.total ?? 0}/${marks?.total_max ?? 23}</b> (Content: ${marks?.content ?? 0}/${marks?.content_max ?? 8}, Language: ${marks?.language ?? 0}/${marks?.language_max ?? 15})
 🔍 <b>Errors:</b> ${errorCount}
-🔒 <b>Submission:</b> Verbatim OCR (Locked)
+🔒 <b>Mode:</b> EdumenAI Dynamic Assessment
 
 📎 <i>Attached: Complete Marked PDF Report</i>`;
 
@@ -605,14 +605,14 @@ export async function sendTeacherQuotaAlert({
 export async function sendTeacherError(
   studentInfo: TelegramStudentInfo | null | undefined,
   errorMessage: string,
-  exerciseTitle = 'Exercise 4'
+  exerciseTitle = 'Assessment'
 ): Promise<TelegramApiResult[] | null> {
   const resolvedTargets = await resolveTargetChatIds();
   if (resolvedTargets.length === 0) {
     return null;
   }
 
-  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Exercise 4');
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Assessment');
   const msg = `
 ⚠️ <b>EdumenAI Error - ${safeTitle}</b>
 👤 <b>Student:</b> ${escapeTelegramHtml(studentInfo?.name || 'Unknown')} (${escapeTelegramHtml(studentInfo?.school || 'General')})

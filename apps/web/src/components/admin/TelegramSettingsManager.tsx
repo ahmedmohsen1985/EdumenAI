@@ -682,7 +682,7 @@ export function TelegramSettingsManager(): React.ReactElement {
                   type="text"
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="Receives all Exercise 4 reports and quota alerts"
+                  placeholder="Receives assessment reports and quota alerts"
                   className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand-navy focus:outline-none"
                 />
               </div>

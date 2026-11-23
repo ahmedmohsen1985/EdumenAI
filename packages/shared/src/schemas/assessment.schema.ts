@@ -3,7 +3,7 @@ import { MarkingReportSchema } from './marking-report.schema.js';
 import { TranscriptionSchema } from './transcription.schema.js';
 
 /**
- * Exercise 4 API request/response contracts.
+ * Unified Assessment API request/response contracts.
  * These schemas define the public REST boundary between the Next.js frontend
  * and the Express backend.
  */

@@ -9,7 +9,7 @@ import type {
   VersionStatus
 } from '@edumenai/shared';
 import { adminFetch } from './admin-auth';
-import { fetchWithCache, invalidateCache } from './client-cache';
+import { fetchWithCache, invalidateCache, setCached } from './client-cache';
 
 export const ADMIN_EXERCISES_CACHE_KEYS = {
   exercises: 'admin:exercises',
@@ -119,6 +119,7 @@ export async function createAdminExercise(
   invalidateCache('admin:exercise:');
   invalidateCache('admin:stats');
   invalidateCache('pub:');
+  setCached(ADMIN_EXERCISES_CACHE_KEYS.exercise(res.data.code), res.data);
   return res.data;
 }
 
@@ -153,6 +154,7 @@ export async function saveAdminExerciseDraft(
   invalidateCache('admin:exercise:');
   invalidateCache('admin:stats');
   invalidateCache('pub:');
+  setCached(ADMIN_EXERCISES_CACHE_KEYS.exercise(res.data.exercise.code), res.data.exercise);
   return res.data;
 }
 
@@ -171,6 +173,42 @@ export async function publishAdminExercise(
   invalidateCache('admin:exercise:');
   invalidateCache('admin:stats');
   invalidateCache('pub:');
+  setCached(ADMIN_EXERCISES_CACHE_KEYS.exercise(res.data.exercise.code), res.data.exercise);
+  return res.data;
+}
+
+export async function deleteAdminExercise(
+  code: string
+): Promise<{ deleted: boolean; code: string }> {
+  const res = await adminFetch<{
+    success: true;
+    data: { deleted: boolean; code: string };
+  }>(`/api/admin/exercises/${encodeURIComponent(code)}`, {
+    method: 'DELETE'
+  });
+  invalidateCache('admin:exercises');
+  invalidateCache('admin:exercise:');
+  invalidateCache('admin:stats');
+  invalidateCache('pub:');
+  return res.data;
+}
+
+export async function duplicateAdminExercise(
+  code: string,
+  input: { code: string; title: string }
+): Promise<AdminExerciseDetail> {
+  const res = await adminFetch<{ success: true; data: AdminExerciseDetail }>(
+    `/api/admin/exercises/${encodeURIComponent(code)}/duplicate`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input)
+    }
+  );
+  invalidateCache('admin:exercises');
+  invalidateCache('admin:exercise:');
+  invalidateCache('admin:stats');
+  invalidateCache('pub:');
+  setCached(ADMIN_EXERCISES_CACHE_KEYS.exercise(res.data.code), res.data);
   return res.data;
 }
 

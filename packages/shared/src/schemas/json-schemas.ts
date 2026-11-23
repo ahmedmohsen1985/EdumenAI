@@ -1,5 +1,5 @@
 /**
- * Unified Standard JSON Schema for Exercise 4 Marking Reports.
+ * Unified Standard JSON Schema for Assessment Marking Reports.
  * Compatible with OpenAI strict json_schema, Anthropic tool input_schema, OpenRouter, and Gemini.
  */
 export const MARKING_JSON_SCHEMA = {

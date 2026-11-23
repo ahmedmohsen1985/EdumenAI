@@ -57,18 +57,62 @@ export class ApiError extends Error {
 
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit & { timeoutMs?: number } = {}
 ): Promise<T> {
+  const { timeoutMs = 25_000, signal: externalSignal, ...fetchOptions } = options;
   const isFormData =
-    typeof FormData !== 'undefined' && options.body instanceof FormData;
+    typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
 
-  const res = await fetch(getApiUrl(path), {
-    ...options,
-    headers: {
-      ...(options.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers
+  const controller = new AbortController();
+  let timedOut = false;
+
+  const onExternalAbort = (): void => {
+    controller.abort();
+  };
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
     }
-  });
+  }
+
+  const timerId =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : null;
+
+  let res: Response;
+  try {
+    res = await fetch(getApiUrl(path), {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: {
+        ...(fetchOptions.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
+        ...fetchOptions.headers
+      }
+    });
+  } catch (err: unknown) {
+    if (timedOut && !(externalSignal?.aborted)) {
+      throw new ApiError(
+        'Request timed out. Please verify the API server is running and try again.',
+        408,
+        'TIMEOUT'
+      );
+    }
+    throw err;
+  } finally {
+    if (timerId !== null) {
+      clearTimeout(timerId);
+    }
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onExternalAbort);
+    }
+  }
 
   const data = (await res.json().catch(() => null)) as {
     error?: string;
@@ -204,6 +248,7 @@ export async function runExerciseOcr(
     {
       method: 'POST',
       body: formData,
+      timeoutMs: 130_000,
       ...(trimmedKey ? { headers: { 'x-admin-key': trimmedKey } } : {})
     }
   );
@@ -221,6 +266,7 @@ export async function runExerciseEvaluate(
     {
       method: 'POST',
       body: JSON.stringify(payload),
+      timeoutMs: 130_000,
       ...(trimmedKey ? { headers: { 'x-admin-key': trimmedKey } } : {})
     }
   );
@@ -261,7 +307,8 @@ export async function sendReportToTelegram(
       `/api/reports/${encodeURIComponent(reportId)}/send-telegram`,
       {
         method: 'POST',
-        body: formData
+        body: formData,
+        timeoutMs: 130_000
       }
     );
     return res.data;
@@ -271,7 +318,8 @@ export async function sendReportToTelegram(
     `/api/reports/${encodeURIComponent(reportId)}/send-telegram`,
     {
       method: 'POST',
-      body: JSON.stringify({})
+      body: JSON.stringify({}),
+      timeoutMs: 130_000
     }
   );
   return res.data;

@@ -30,11 +30,13 @@ import {
   FileCode2,
   Layers,
   Loader2,
+  RefreshCw,
   Rocket,
   Save,
   SlidersHorizontal
 } from 'lucide-react';
 import {
+  ADMIN_EXERCISES_CACHE_KEYS,
   fetchAdminExercise,
   fetchTelegramTargetsSummary,
   publishAdminExercise,
@@ -42,6 +44,7 @@ import {
   type AdminExerciseDetail,
   type AdminPromptVersionView
 } from '../../../lib/admin-exercises-api';
+import { getCached, isCacheFresh } from '../../../lib/client-cache';
 import { BlockInspector, inferInputFieldMapFromCanvas } from './BlockInspector';
 import { BlockPalette } from './BlockPalette';
 import { BuilderCanvas } from './BuilderCanvas';
@@ -133,7 +136,10 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [activeDragLabel, setActiveDragLabel] = useState<string | null>(null);
 
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (!code) return false;
+    return getCached<AdminExerciseDetail>(ADMIN_EXERCISES_CACHE_KEYS.exercise(code)) === null;
+  });
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -177,34 +183,58 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
     []
   );
 
-  useEffect(() => {
-    if (!code) return;
-    let cancelled = false;
-    setIsLoading(true);
-    setLoadError(null);
+  const loadExercise = useCallback(
+    async (force = false): Promise<void> => {
+      if (!code) {
+        setIsLoading(false);
+        setLoadError('Invalid exercise code.');
+        return;
+      }
 
-    void Promise.all([
-      fetchAdminExercise(code),
-      fetchTelegramTargetsSummary().catch(() => [] as TelegramTargetView[])
-    ])
-      .then(([detail, targets]) => {
-        if (cancelled) return;
+      const cacheKey = ADMIN_EXERCISES_CACHE_KEYS.exercise(code);
+      const cached = !force ? getCached<AdminExerciseDetail>(cacheKey) : null;
+      if (cached) {
+        hydrateFromDetail(cached);
+        setIsLoading(false);
+        if (isCacheFresh(cacheKey, 30_000)) {
+          return;
+        }
+      } else {
+        setIsLoading(true);
+      }
+
+      setLoadError(null);
+      try {
+        const detail = await fetchAdminExercise(code, { force });
         hydrateFromDetail(detail);
-        setTelegramTargets(targets);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
+      } catch (err: unknown) {
+        if (!cached) {
           setLoadError(err instanceof Error ? err.message : 'Failed to load exercise builder.');
         }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [code, hydrateFromDetail]
+  );
 
+  useEffect(() => {
+    void loadExercise(false);
+  }, [loadExercise]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchTelegramTargetsSummary()
+      .catch(() => [] as TelegramTargetView[])
+      .then((targets) => {
+        if (!cancelled) {
+          setTelegramTargets(targets);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [code, hydrateFromDetail]);
+  }, []);
 
   const saveDraftInternal = async (): Promise<AdminPromptVersionView | null> => {
     if (promptValidationError) {
@@ -433,13 +463,23 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
       <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-900">
         <h2 className="font-bold">Unable to load Exercise Builder</h2>
         <p className="mt-1 text-sm">{loadError || 'Exercise or version not found.'}</p>
-        <Link
-          href="/admin/exercises"
-          className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-navy underline"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Exercises
-        </Link>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void loadExercise(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-navy px-4 py-2 text-xs font-semibold text-white hover:bg-brand-navy/90"
+          >
+            <RefreshCw className="h-3.5 w-3.5 text-brand-gold" />
+            Retry
+          </button>
+          <Link
+            href="/admin/exercises"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-navy underline"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Exercises
+          </Link>
+        </div>
       </div>
     );
   }

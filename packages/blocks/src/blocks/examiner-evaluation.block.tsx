@@ -36,17 +36,17 @@ function ExaminerEvaluationBlockRuntime({
       : ctx.promptMeta.filter((p) => p.taskType === 'evaluation');
 
   return (
-    <div className="rounded-xl border border-brand-gold/35 bg-brand-cream/70 p-4 space-y-3">
+    <div className="glass-panel space-y-3 p-4 transition-all duration-200 hover:bg-white/85">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-navy text-brand-gold">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_4px_10px_-4px_rgba(15,17,21,0.4)]">
             <Award className="h-4 w-4" />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-brand-navy">
+            <h4 className="text-sm font-semibold tracking-tight text-zinc-900">
               {block.label || props.reportTitle || 'AI Examiner Evaluation'}
             </h4>
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-zinc-600">
               {props.reportTitle || ctx.exerciseTitle}
             </p>
           </div>
@@ -54,16 +54,16 @@ function ExaminerEvaluationBlockRuntime({
 
         <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
           {contentMax !== undefined && (
-            <span className="rounded-full bg-white px-2.5 py-1 text-slate-700 border border-slate-200">
+            <span className="glass-pill">
               Content /{contentMax}
             </span>
           )}
           {languageMax !== undefined && (
-            <span className="rounded-full bg-white px-2.5 py-1 text-slate-700 border border-slate-200">
+            <span className="glass-pill">
               Language /{languageMax}
             </span>
           )}
-          <span className="rounded-full bg-brand-navy px-2.5 py-1 text-brand-gold">
+          <span className="inline-flex items-center rounded-full bg-zinc-900 px-2.5 py-1 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
             Total /{totalMarks}
           </span>
         </div>
@@ -71,13 +71,13 @@ function ExaminerEvaluationBlockRuntime({
 
       {activePrompts.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-medium text-slate-500">Active Rubrics:</span>
+          <span className="text-xs font-medium text-zinc-500">Active Rubrics:</span>
           {activePrompts.map((p) => (
             <span
               key={p.key}
-              className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-xs font-medium text-slate-700 border border-slate-200"
+              className="inline-flex items-center gap-1 rounded-md border border-white/80 bg-white/70 px-2 py-0.5 text-xs font-medium text-zinc-700 ring-1 ring-zinc-900/[0.06] backdrop-blur-md transition-all duration-200 hover:bg-white/95"
             >
-              <Sparkles className="h-3 w-3 text-brand-gold" />
+              <Sparkles className="h-3 w-3 text-zinc-500" />
               {p.label}
             </span>
           ))}
@@ -85,8 +85,8 @@ function ExaminerEvaluationBlockRuntime({
       )}
 
       {ctx.isSubmitting && (
-        <div className="flex items-center gap-2.5 rounded-xl bg-brand-navy px-4 py-3 text-xs font-semibold text-white">
-          <Loader2 className="h-4 w-4 animate-spin text-brand-gold" />
+        <div className="flex items-center gap-2.5 rounded-xl bg-zinc-900 px-4 py-3 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
+          <Loader2 className="h-4 w-4 animate-spin opacity-80" />
           <span>AI Examiner Marking Your Work... Please wait while your full report is generated.</span>
         </div>
       )}

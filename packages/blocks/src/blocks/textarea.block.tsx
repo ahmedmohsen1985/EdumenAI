@@ -39,15 +39,15 @@ function TextareaBlockRuntime({
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         {block.label ? (
-          <label htmlFor={block.id} className="block text-sm font-medium text-slate-800">
+          <label htmlFor={block.id} className="block text-sm font-medium text-zinc-900">
             {block.label}
-            {block.required && <span className="ml-1 text-red-600">*</span>}
+            {block.required && <span className="ml-1 text-rose-600">*</span>}
           </label>
         ) : (
           <span />
         )}
         {props.showWordCount && (
-          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+          <span className="glass-pill font-medium text-zinc-600 transition-all duration-200">
             {wordCount} {wordCount === 1 ? 'word' : 'words'}
           </span>
         )}
@@ -61,18 +61,14 @@ function TextareaBlockRuntime({
         placeholder={props.placeholder ?? ''}
         disabled={ctx.isSubmitting}
         aria-invalid={Boolean(error)}
-        className={`w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm leading-relaxed text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 ${
-          error
-            ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
-            : 'border-slate-300 focus:border-brand-navy focus:ring-brand-navy/15'
-        } disabled:cursor-not-allowed disabled:bg-slate-50 ${
-          props.readOnly ? 'bg-slate-50 text-slate-700' : ''
-        }`}
+        className={`glass-input leading-relaxed hover:bg-white/90 ${
+          error ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-500/15' : ''
+        } ${props.readOnly ? 'bg-zinc-50/70 text-zinc-700' : ''}`}
       />
       {props.helperText && !error && (
-        <p className="text-xs text-slate-500">{props.helperText}</p>
+        <p className="text-xs text-zinc-500">{props.helperText}</p>
       )}
-      {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+      {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
     </div>
   );
 }

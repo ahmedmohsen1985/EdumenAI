@@ -29,24 +29,24 @@ function ActionButtonBlockRuntime({
 
   const variantClasses =
     variant === 'secondary'
-      ? 'border border-brand-navy bg-white text-brand-navy hover:bg-slate-50'
-      : 'bg-brand-navy text-white hover:bg-brand-navy/90 shadow-sm';
+      ? 'glass-btn-secondary'
+      : 'glass-btn-primary';
 
   return (
     <button
       type="button"
       onClick={() => void ctx.onTriggerAction({ block })}
       disabled={ctx.isSubmitting}
-      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-65 ${variantClasses}`}
+      className={`${variantClasses} w-full px-6 py-3.5`}
     >
       {ctx.isSubmitting ? (
         <>
-          <Loader2 className="h-4 w-4 animate-spin text-brand-gold" />
+          <Loader2 className="h-4 w-4 animate-spin opacity-80" />
           <span>{loadingLabel}</span>
         </>
       ) : (
         <>
-          <Send className="h-4 w-4 text-brand-gold" />
+          <Send className="h-4 w-4 opacity-80" />
           <span>{label}</span>
         </>
       )}

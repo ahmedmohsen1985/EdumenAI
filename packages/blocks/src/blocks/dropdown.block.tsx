@@ -31,9 +31,9 @@ function DropdownBlockRuntime({
   return (
     <div className="space-y-1.5">
       {block.label && (
-        <label htmlFor={block.id} className="block text-sm font-medium text-slate-800">
+        <label htmlFor={block.id} className="block text-sm font-medium text-zinc-900">
           {block.label}
-          {block.required && <span className="ml-1 text-red-600">*</span>}
+          {block.required && <span className="ml-1 text-rose-600">*</span>}
         </label>
       )}
       <div className="relative">
@@ -43,11 +43,11 @@ function DropdownBlockRuntime({
           onChange={(e) => ctx.setValue(fieldKey, e.target.value)}
           disabled={ctx.isSubmitting}
           aria-invalid={Boolean(error)}
-          className={`w-full appearance-none rounded-xl border bg-white py-2.5 pl-3.5 pr-10 text-sm text-slate-900 transition focus:outline-none focus:ring-2 ${
+          className={`glass-input cursor-pointer appearance-none py-2.5 pl-3.5 pr-10 hover:bg-white/90 ${
             error
-              ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
-              : 'border-slate-300 focus:border-brand-navy focus:ring-brand-navy/15'
-          } disabled:cursor-not-allowed disabled:bg-slate-50`}
+              ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-500/15'
+              : ''
+          }`}
         >
           <option value="">{props.placeholder ?? '-- Select an option --'}</option>
           {props.options.map((opt) => (
@@ -56,12 +56,12 @@ function DropdownBlockRuntime({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400 transition-colors duration-200" />
       </div>
       {props.helperText && !error && (
-        <p className="text-xs text-slate-500">{props.helperText}</p>
+        <p className="text-xs text-zinc-500">{props.helperText}</p>
       )}
-      {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+      {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
     </div>
   );
 }

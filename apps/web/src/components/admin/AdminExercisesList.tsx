@@ -26,6 +26,13 @@ import {
   type AdminExerciseSummary
 } from '../../lib/admin-exercises-api';
 import { getCached, isCacheFresh } from '../../lib/client-cache';
+import {
+  AnimatedModal,
+  PageEntrance,
+  SlidingTabButton,
+  StaggerCard,
+  StaggerGrid
+} from '../ui/MotionPrimitives';
 
 type SkillFilter = 'ALL' | ExerciseSkill;
 
@@ -232,12 +239,14 @@ export function AdminExercisesList(): React.ReactElement {
   };
 
   return (
-    <div className="space-y-6">
+    <PageEntrance className="space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-brand-navy">Exercises &amp; Lego Builder</h1>
-          <p className="mt-1 text-sm text-slate-600">
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
+            Exercises &amp; Lego Builder
+          </h1>
+          <p className="mt-1 text-sm text-zinc-600">
             Manage assessments across Writing, Reading, Listening, and Speaking skills.
           </p>
         </div>
@@ -248,64 +257,68 @@ export function AdminExercisesList(): React.ReactElement {
             resetModal();
             setIsCreateOpen(true);
           }}
-          className="inline-flex items-center gap-2 rounded-xl bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-navy/90"
+          className="glass-btn-primary"
         >
-          <Plus className="h-4 w-4 text-brand-gold" />
+          <Plus className="h-4 w-4" />
           Create New Exercise
         </button>
       </div>
 
       {/* Skill Filter Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+      <div
+        role="tablist"
+        aria-label="Filter exercises by skill"
+        className="glass-panel flex flex-wrap gap-1.5 p-1.5"
+      >
         {SKILL_TABS.map((tab) => {
           const isActive = skillFilter === tab.id;
           return (
-            <button
+            <SlidingTabButton
               key={tab.id}
-              type="button"
+              layoutId="admin-skill-pill"
+              asTab
+              isActive={isActive}
               onClick={() => setSkillFilter(tab.id)}
-              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-                isActive
-                  ? 'bg-brand-navy text-white shadow-sm'
-                  : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
+              className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold"
+              activeClassName="text-white"
+              inactiveClassName="text-zinc-600 hover:text-zinc-900"
             >
               <span>{tab.label}</span>
               <span
                 className={`rounded-full px-2 py-0.5 text-xs ${
                   isActive
-                    ? 'bg-brand-gold text-brand-navy'
-                    : 'bg-slate-100 text-slate-600'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-zinc-900/5 text-zinc-600'
                 }`}
               >
                 {countsBySkill[tab.id]}
               </span>
-            </button>
+            </SlidingTabButton>
           );
         })}
       </div>
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <Loader2 className="h-5 w-5 animate-spin text-brand-navy" />
-          <span className="text-sm font-medium text-slate-700">Loading exercises...</span>
+        <div className="glass-panel flex items-center gap-3 p-8">
+          <Loader2 className="h-5 w-5 animate-spin text-zinc-700" />
+          <span className="text-sm font-medium text-zinc-700">Loading exercises...</span>
         </div>
       ) : loadError ? (
-        <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-6 text-red-900">
-          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+        <div className="glass-panel-strong flex items-start gap-3 border-rose-200/80 bg-rose-50/75 p-6 text-rose-900">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
           <div>
             <p className="font-bold">Failed to load exercises</p>
             <p className="mt-1 text-sm">{loadError}</p>
           </div>
         </div>
       ) : filteredExercises.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
-          <Layers className="mx-auto h-10 w-10 text-slate-300" />
-          <h2 className="mt-3 text-base font-bold text-slate-800">
+        <div className="glass-panel border-dashed border-zinc-300/80 p-10 text-center">
+          <Layers className="mx-auto h-10 w-10 text-zinc-300" />
+          <h2 className="mt-3 text-base font-bold text-zinc-800">
             No exercises in {skillFilter === 'ALL' ? 'the catalog' : skillFilter}
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-zinc-500">
             Create a new exercise to open the drag-and-drop Lego Template Builder.
           </p>
           <button
@@ -315,182 +328,182 @@ export function AdminExercisesList(): React.ReactElement {
               if (skillFilter !== 'ALL') setSkill(skillFilter);
               setIsCreateOpen(true);
             }}
-            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand-navy px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy/90"
+            className="glass-btn-primary mt-4"
           >
-            <Plus className="h-4 w-4 text-brand-gold" />
+            <Plus className="h-4 w-4" />
             Create New Exercise
           </button>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <StaggerGrid key={skillFilter} className="grid gap-4 md:grid-cols-2">
           {filteredExercises.map((ex) => (
-            <div
-              key={ex.id}
-              className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300"
-            >
-              <div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-md bg-brand-navy px-2.5 py-0.5 text-xs font-bold uppercase text-brand-gold whitespace-nowrap shrink-0">
-                      {ex.skill}
-                    </span>
-                    <span className="rounded-md bg-brand-cream px-2 py-0.5 text-xs font-semibold text-brand-navy border border-brand-gold/30 whitespace-nowrap shrink-0">
-                      {ex.totalMarks} Marks
-                    </span>
-                  </div>
-
-                  <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
-                    {ex.versionCount} {ex.versionCount === 1 ? 'version' : 'versions'}
-                  </span>
-                </div>
-
-                <h2 className="mt-3 text-lg font-bold text-brand-navy">{ex.title}</h2>
-                <p
-                  className="mt-0.5 truncate font-mono text-xs text-slate-400"
-                  title={ex.code}
-                >
-                  /exercises/{ex.code}
-                </p>
-                {ex.description && (
-                  <p className="mt-1 line-clamp-2 text-sm text-slate-600">{ex.description}</p>
-                )}
-
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  {ex.activeVersion ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Published v{ex.activeVersion.version}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                      Not Published
-                    </span>
-                  )}
-
-                  {ex.latestDraft && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
-                      <FileEdit className="h-3.5 w-3.5" />
-                      Draft v{ex.latestDraft.version}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/admin/exercises/${encodeURIComponent(ex.code)}/builder`}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-navy/90"
-                  >
-                    <Wrench className="h-4 w-4 text-brand-gold" />
-                    Open Builder
-                  </Link>
-
-                  {ex.activeVersion && (
-                    <Link
-                      href={`/exercises/${encodeURIComponent(ex.code)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      <span>Student View</span>
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Link>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => openDuplicateModal(ex)}
-                    title="Duplicate Exercise"
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    <span>Duplicate</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeleteError(null);
-                      setConfirmDeleteCode(ex.code);
-                    }}
-                    title="Delete Exercise"
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Delete</span>
-                  </button>
-                </div>
-
-                {confirmDeleteCode === ex.code && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-900 space-y-2">
-                    <p className="font-semibold">
-                      Delete &quot;{ex.title}&quot;? All versions, submissions, and evaluation
-                      reports for this exercise will be permanently deleted.
-                    </p>
-                    {deleteError && <p className="font-medium text-red-700">{deleteError}</p>}
+            <StaggerCard key={ex.id}>
+              <div className="glass-card flex h-full flex-col justify-between p-5">
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleConfirmDelete(ex.code)}
-                        disabled={deletingCode === ex.code}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-                      >
-                        {deletingCode === ex.code && (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        )}
-                        Confirm Delete
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirmDeleteCode(null);
-                          setDeleteError(null);
-                        }}
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        Cancel
-                      </button>
+                      <span className="glass-pill !bg-zinc-900 !text-white !border-zinc-900 uppercase">
+                        {ex.skill}
+                      </span>
+                      <span className="glass-pill">
+                        {ex.totalMarks} Marks
+                      </span>
                     </div>
+
+                    <span className="text-xs font-medium text-zinc-500 whitespace-nowrap">
+                      {ex.versionCount} {ex.versionCount === 1 ? 'version' : 'versions'}
+                    </span>
                   </div>
-                )}
+
+                  <h2 className="mt-3 text-lg font-bold text-zinc-900">{ex.title}</h2>
+                  <p
+                    className="mt-0.5 truncate font-mono text-xs text-zinc-400"
+                    title={ex.code}
+                  >
+                    /exercises/{ex.code}
+                  </p>
+                  {ex.description && (
+                    <p className="mt-1.5 line-clamp-2 text-sm text-zinc-600">{ex.description}</p>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {ex.activeVersion ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50/90 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Published v{ex.activeVersion.version}
+                      </span>
+                    ) : (
+                      <span className="glass-pill">
+                        Not Published
+                      </span>
+                    )}
+
+                    {ex.latestDraft && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50/90 px-2.5 py-0.5 text-xs font-semibold text-amber-800 whitespace-nowrap">
+                        <FileEdit className="h-3.5 w-3.5" />
+                        Draft v{ex.latestDraft.version}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-2 border-t border-zinc-200/70 pt-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/admin/exercises/${encodeURIComponent(ex.code)}/builder`}
+                      className="glass-btn-primary flex-1 !py-2"
+                    >
+                      <Wrench className="h-4 w-4" />
+                      Open Builder
+                    </Link>
+
+                    {ex.activeVersion && (
+                      <Link
+                        href={`/exercises/${encodeURIComponent(ex.code)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="glass-btn-secondary !px-3 !py-2"
+                      >
+                        <span>Student View</span>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Link>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => openDuplicateModal(ex)}
+                      title="Duplicate Exercise"
+                      className="glass-btn-secondary !px-3 !py-2"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Duplicate</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteError(null);
+                        setConfirmDeleteCode(ex.code);
+                      }}
+                      title="Delete Exercise"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200/90 bg-rose-50/75 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100/80"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+
+                  {confirmDeleteCode === ex.code && (
+                    <div className="rounded-xl border border-rose-200/90 bg-rose-50/85 p-3 text-xs text-rose-900 space-y-2">
+                      <p className="font-semibold">
+                        Delete &quot;{ex.title}&quot;? All versions, submissions, and evaluation
+                        reports for this exercise will be permanently deleted.
+                      </p>
+                      {deleteError && <p className="font-medium text-rose-700">{deleteError}</p>}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleConfirmDelete(ex.code)}
+                          disabled={deletingCode === ex.code}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                        >
+                          {deletingCode === ex.code && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
+                          Confirm Delete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDeleteCode(null);
+                            setDeleteError(null);
+                          }}
+                          className="glass-btn-secondary !rounded-lg !px-3 !py-1.5 !text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            </StaggerCard>
           ))}
-        </div>
+        </StaggerGrid>
       )}
 
       {/* Duplicate Exercise Modal */}
-      {duplicateSource && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="duplicate-exercise-title"
-        >
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 id="duplicate-exercise-title" className="text-lg font-bold text-brand-navy">
+      <AnimatedModal
+        open={Boolean(duplicateSource)}
+        onClose={() => setDuplicateSource(null)}
+        ariaLabelledBy="duplicate-exercise-title"
+        className="p-6"
+      >
+        {duplicateSource && (
+          <>
+            <div className="flex items-center justify-between border-b border-zinc-200/70 pb-3">
+              <h2 id="duplicate-exercise-title" className="text-lg font-bold text-zinc-900">
                 Duplicate Exercise
               </h2>
               <button
                 type="button"
                 onClick={() => setDuplicateSource(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-700"
+                aria-label="Close modal"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <form onSubmit={(e) => void handleDuplicateSubmit(e)} className="mt-4 space-y-4">
-              <p className="text-xs text-slate-600">
+              <p className="text-xs text-zinc-600">
                 Clones all template blocks, prompt entries, and marking schema from{' '}
-                <strong className="text-brand-navy">{duplicateSource.title}</strong> into a new
+                <strong className="text-zinc-900">{duplicateSource.title}</strong> into a new
                 draft exercise.
               </p>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700">New Title *</label>
+                <label className="block text-xs font-semibold text-zinc-700">New Title *</label>
                 <input
                   type="text"
                   required
@@ -502,12 +515,12 @@ export function AdminExercisesList(): React.ReactElement {
                       setDupCode(slugifyTitle(val));
                     }
                   }}
-                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-brand-navy focus:outline-none"
+                  className="glass-input mt-1"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700">
+                <label className="block text-xs font-semibold text-zinc-700">
                   New URL Slug (code) *
                 </label>
                 <input
@@ -518,178 +531,174 @@ export function AdminExercisesList(): React.ReactElement {
                     setDupCodeManuallyEdited(true);
                     setDupCode(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''));
                   }}
-                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:border-brand-navy focus:outline-none"
+                  className="glass-input mt-1 font-mono"
                 />
               </div>
 
               {dupError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                <div className="rounded-xl border border-rose-200 bg-rose-50/85 px-3 py-2 text-xs font-medium text-rose-700">
                   {dupError}
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
+              <div className="flex items-center justify-end gap-2 border-t border-zinc-200/70 pt-4">
                 <button
                   type="button"
                   onClick={() => setDuplicateSource(null)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="glass-btn-secondary !py-2"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isDuplicating}
-                  className="inline-flex items-center gap-2 rounded-xl bg-brand-navy px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy/90 disabled:opacity-60"
+                  className="glass-btn-primary !py-2"
                 >
                   {isDuplicating && <Loader2 className="h-4 w-4 animate-spin" />}
                   Duplicate &amp; Open Builder
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </AnimatedModal>
 
       {/* Create New Exercise Modal */}
-      {isCreateOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="create-exercise-title"
-        >
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between bg-brand-navy px-6 py-4 text-white">
-              <h2 id="create-exercise-title" className="text-base font-bold">
-                Create New Exercise
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsCreateOpen(false)}
-                className="rounded-lg p-1 text-slate-300 hover:bg-white/10 hover:text-white"
-                aria-label="Close modal"
-              >
-                <X className="h-5 w-5" />
-              </button>
+      <AnimatedModal
+        open={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        ariaLabelledBy="create-exercise-title"
+        className="overflow-hidden"
+      >
+        <div className="flex items-center justify-between border-b border-zinc-200/70 bg-white/60 px-6 py-4">
+          <h2 id="create-exercise-title" className="text-base font-bold text-zinc-900">
+            Create New Exercise
+          </h2>
+          <button
+            type="button"
+            onClick={() => setIsCreateOpen(false)}
+            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-700"
+            aria-label="Close modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={(e) => void handleCreateSubmit(e)} className="space-y-4 p-6">
+          {createError && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50/85 px-3.5 py-2.5 text-xs font-medium text-rose-700">
+              {createError}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label htmlFor="new-ex-title" className="block text-sm font-semibold text-zinc-800">
+              Exercise Title *
+            </label>
+            <input
+              id="new-ex-title"
+              type="text"
+              required
+              value={title}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              placeholder="e.g. Exercise 3 — Reading Comprehension"
+              className="glass-input"
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="new-ex-code" className="block text-sm font-semibold text-zinc-800">
+                Slug Code *
+              </label>
+              <input
+                id="new-ex-code"
+                type="text"
+                required
+                value={code}
+                onChange={(e) => {
+                  setCodeManuallyEdited(true);
+                  setCode(e.target.value.toLowerCase());
+                }}
+                placeholder="e.g. ex3-reading"
+                className="glass-input font-mono"
+              />
+              <p className="text-[11px] text-zinc-500">Lowercase a-z, 0-9, and hyphens only.</p>
             </div>
 
-            <form onSubmit={(e) => void handleCreateSubmit(e)} className="space-y-4 p-6">
-              {createError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700">
-                  {createError}
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label htmlFor="new-ex-title" className="block text-sm font-semibold text-slate-800">
-                  Exercise Title *
-                </label>
-                <input
-                  id="new-ex-title"
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => handleTitleChange(e.target.value)}
-                  placeholder="e.g. Exercise 3 — Reading Comprehension"
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm text-slate-900 focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/15"
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label htmlFor="new-ex-code" className="block text-sm font-semibold text-slate-800">
-                    Slug Code *
-                  </label>
-                  <input
-                    id="new-ex-code"
-                    type="text"
-                    required
-                    value={code}
-                    onChange={(e) => {
-                      setCodeManuallyEdited(true);
-                      setCode(e.target.value.toLowerCase());
-                    }}
-                    placeholder="e.g. ex3-reading"
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 font-mono text-sm text-slate-900 focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/15"
-                  />
-                  <p className="text-[11px] text-slate-500">Lowercase a-z, 0-9, and hyphens only.</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label htmlFor="new-ex-skill" className="block text-sm font-semibold text-slate-800">
-                    Skill Category *
-                  </label>
-                  <select
-                    id="new-ex-skill"
-                    value={skill}
-                    onChange={(e) => setSkill(e.target.value as ExerciseSkill)}
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm text-slate-900 focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/15"
-                  >
-                    <option value="WRITING">Writing</option>
-                    <option value="READING">Reading</option>
-                    <option value="LISTENING">Listening</option>
-                    <option value="SPEAKING">Speaking</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="new-ex-marks" className="block text-sm font-semibold text-slate-800">
-                  Total Marks *
-                </label>
-                <input
-                  id="new-ex-marks"
-                  type="number"
-                  min={1}
-                  max={500}
-                  required
-                  value={totalMarks}
-                  onChange={(e) => setTotalMarks(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm text-slate-900 focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/15"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="new-ex-desc" className="block text-sm font-semibold text-slate-800">
-                  Description
-                </label>
-                <textarea
-                  id="new-ex-desc"
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Brief exam overview and marking focus..."
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm text-slate-900 focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/15"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isCreating}
-                  className="inline-flex items-center gap-2 rounded-xl bg-brand-navy px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy/90 disabled:opacity-60"
-                >
-                  {isCreating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin text-brand-gold" />
-                      <span>Creating...</span>
-                    </>
-                  ) : (
-                    <span>Create &amp; Open Builder</span>
-                  )}
-                </button>
-              </div>
-            </form>
+            <div className="space-y-1.5">
+              <label htmlFor="new-ex-skill" className="block text-sm font-semibold text-zinc-800">
+                Skill Category *
+              </label>
+              <select
+                id="new-ex-skill"
+                value={skill}
+                onChange={(e) => setSkill(e.target.value as ExerciseSkill)}
+                className="glass-input"
+              >
+                <option value="WRITING">Writing</option>
+                <option value="READING">Reading</option>
+                <option value="LISTENING">Listening</option>
+                <option value="SPEAKING">Speaking</option>
+              </select>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="new-ex-marks" className="block text-sm font-semibold text-zinc-800">
+              Total Marks *
+            </label>
+            <input
+              id="new-ex-marks"
+              type="number"
+              min={1}
+              max={500}
+              required
+              value={totalMarks}
+              onChange={(e) => setTotalMarks(e.target.value)}
+              className="glass-input"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="new-ex-desc" className="block text-sm font-semibold text-zinc-800">
+              Description
+            </label>
+            <textarea
+              id="new-ex-desc"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief exam overview and marking focus..."
+              className="glass-input"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(false)}
+              className="glass-btn-secondary !py-2"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isCreating}
+              className="glass-btn-primary !py-2"
+            >
+              {isCreating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Creating...</span>
+                </>
+              ) : (
+                <span>Create &amp; Open Builder</span>
+              )}
+            </button>
+          </div>
+        </form>
+      </AnimatedModal>
+    </PageEntrance>
   );
 }

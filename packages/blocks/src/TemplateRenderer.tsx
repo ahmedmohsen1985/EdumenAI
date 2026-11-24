@@ -47,9 +47,9 @@ export function TemplateRenderer({
       {sections.map((section) => (
         <section
           key={section.title}
-          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+          className="glass-panel p-6 transition-all duration-200 hover:bg-white/85"
         >
-          <h2 className="mb-4 border-b border-slate-100 pb-3 text-base font-semibold text-brand-navy">
+          <h2 className="mb-4 border-b border-zinc-900/[0.06] pb-3 text-base font-semibold tracking-tight text-zinc-900">
             {section.title}
           </h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -61,7 +61,7 @@ export function TemplateRenderer({
                 return (
                   <div
                     key={block.id}
-                    className={`${colSpanClass} flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800`}
+                    className={`${colSpanClass} flex items-center gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-xs font-medium text-amber-800 backdrop-blur-md`}
                   >
                     <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
                     <span>Unknown block plugin: {block.type}</span>

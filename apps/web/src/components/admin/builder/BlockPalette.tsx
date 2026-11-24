@@ -2,7 +2,6 @@
 
 import type React from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 import { listBlocks, type BlockDefinition } from '@edumenai/blocks';
 import {
   AlignLeft,
@@ -51,7 +50,7 @@ function DraggablePaletteCard({
   definition: BlockDefinition;
   onAdd: (def: BlockDefinition) => void;
 }): React.ReactElement {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `palette:${definition.type}`,
     data: {
       source: 'palette',
@@ -59,36 +58,32 @@ function DraggablePaletteCard({
     }
   });
 
-  const style: React.CSSProperties = {
-    transform: CSS.Translate.toString(transform)
-  };
-
+  // Intentionally omit transform on the stationary palette tile: only <DragOverlay> moves.
   return (
     <div
       ref={setNodeRef}
-      style={style}
-      className={`group rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-brand-gold ${
-        isDragging ? 'opacity-50 ring-2 ring-brand-gold' : ''
+      className={`group rounded-xl border border-white/80 bg-white/75 p-3 shadow-sm backdrop-blur-md transition-[opacity,transform,border-color,background-color,box-shadow] duration-150 hover:border-zinc-300/90 hover:bg-white/95 hover:shadow ${
+        isDragging ? 'scale-[0.98] opacity-40 ring-1 ring-zinc-400/50' : ''
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <div
           {...listeners}
           {...attributes}
-          className="flex min-w-0 flex-1 cursor-grab items-start gap-2.5 active:cursor-grabbing"
+          className="flex min-w-0 flex-1 cursor-grab select-none items-start gap-2.5 active:cursor-grabbing"
           title="Drag onto canvas"
         >
-          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-navy/10 text-brand-navy">
+          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-zinc-900/10 bg-zinc-900/5 text-zinc-800">
             {renderBlockIcon(definition.icon)}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-xs font-bold text-slate-900">
+              <span className="truncate text-xs font-bold text-zinc-900">
                 {definition.name}
               </span>
-              <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
+              <GripVertical className="h-3.5 w-3.5 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-500" />
             </div>
-            <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-500">
+            <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-zinc-500">
               {definition.description}
             </p>
           </div>
@@ -97,7 +92,7 @@ function DraggablePaletteCard({
         <button
           type="button"
           onClick={() => onAdd(definition)}
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-brand-navy transition hover:bg-brand-navy hover:text-white"
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200/80 bg-white/85 px-2 py-1 text-[11px] font-semibold text-zinc-800 shadow-sm transition-colors hover:border-zinc-900 hover:bg-zinc-900 hover:text-white"
           title={`Add ${definition.name}`}
         >
           <Plus className="h-3 w-3" />
@@ -116,10 +111,10 @@ export function BlockPalette({
   const definitions = listBlocks();
 
   return (
-    <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="border-b border-slate-100 pb-3">
-        <h2 className="text-sm font-bold text-brand-navy">Lego Block Palette</h2>
-        <p className="mt-0.5 text-xs text-slate-500">
+    <aside className="glass-panel space-y-4 rounded-2xl p-4">
+      <div className="border-b border-zinc-200/70 pb-3">
+        <h2 className="text-sm font-bold tracking-tight text-zinc-900">Lego Block Palette</h2>
+        <p className="mt-0.5 text-xs text-zinc-500">
           Drag a block onto the canvas or click Add.
         </p>
       </div>
@@ -131,7 +126,7 @@ export function BlockPalette({
 
           return (
             <div key={cat.id} className="space-y-2">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
                 {cat.title}
               </h3>
               <div className="space-y-2">

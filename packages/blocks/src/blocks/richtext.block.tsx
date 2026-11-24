@@ -62,21 +62,23 @@ function RichTextBlockRuntime({
 
   const toneClasses =
     tone === 'info'
-      ? 'border-blue-200 bg-blue-50/70 text-slate-800'
+      ? 'border-white/80 bg-white/60 ring-zinc-900/[0.07] text-zinc-800'
       : tone === 'neutral'
-        ? 'border-slate-200 bg-slate-50 text-slate-800'
-        : 'border-brand-gold/30 bg-brand-cream text-slate-800';
+        ? 'border-white/80 bg-zinc-50/70 ring-zinc-900/[0.05] text-zinc-800'
+        : 'border-white/80 bg-white/75 ring-zinc-900/[0.05] text-zinc-800';
 
   return (
-    <div className={`rounded-xl border p-4 space-y-2.5 ${toneClasses}`}>
+    <div
+      className={`space-y-2.5 rounded-2xl border p-4 shadow-glass ring-1 backdrop-blur-xl transition-all duration-200 hover:bg-white/90 ${toneClasses}`}
+    >
       {heading && (
-        <div className="flex items-center gap-2 text-sm font-semibold text-brand-navy">
-          <BookOpen className="h-4 w-4 text-brand-gold" />
+        <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-zinc-900">
+          <BookOpen className="h-4 w-4 text-zinc-500" />
           <span>{heading}</span>
         </div>
       )}
       {chunks.length > 0 ? (
-        <div className="space-y-2 text-sm leading-relaxed text-slate-700">
+        <div className="space-y-2 text-sm leading-relaxed text-zinc-600">
           {chunks.map((chunk, idx) =>
             chunk.kind === 'list' ? (
               <ul key={idx} className="list-disc space-y-1 pl-5">
@@ -92,7 +94,7 @@ function RichTextBlockRuntime({
           )}
         </div>
       ) : (
-        <p className="text-sm italic text-slate-400">No instructions provided.</p>
+        <p className="text-sm italic text-zinc-400">No instructions provided.</p>
       )}
     </div>
   );

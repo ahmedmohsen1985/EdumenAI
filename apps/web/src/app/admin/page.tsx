@@ -21,6 +21,7 @@ import {
   type AdminPlatformStats
 } from '../../lib/admin-exercises-api';
 import { getCached, isCacheFresh } from '../../lib/client-cache';
+import { PageEntrance, StaggerCard, StaggerGrid } from '../../components/ui/MotionPrimitives';
 
 export default function AdminOverviewPage(): React.ReactElement {
   const cachedExercises = getCached<AdminExerciseSummary[]>(ADMIN_EXERCISES_CACHE_KEYS.exercises);
@@ -70,9 +71,9 @@ export default function AdminOverviewPage(): React.ReactElement {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <Loader2 className="h-5 w-5 animate-spin text-brand-navy" />
-        <span className="text-sm font-medium text-slate-700">
+      <div className="glass-panel flex items-center gap-3 p-8">
+        <Loader2 className="h-5 w-5 animate-spin text-zinc-700" />
+        <span className="text-sm font-medium text-zinc-700">
           Loading Admin Studio metrics...
         </span>
       </div>
@@ -81,8 +82,8 @@ export default function AdminOverviewPage(): React.ReactElement {
 
   if (error) {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-6 text-red-900">
-        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+      <div className="glass-panel-strong flex items-start gap-3 border-rose-200/80 bg-rose-50/75 p-6 text-rose-900">
+        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
         <div>
           <h2 className="font-bold">Failed to load dashboard</h2>
           <p className="mt-1 text-sm">{error}</p>
@@ -105,25 +106,28 @@ export default function AdminOverviewPage(): React.ReactElement {
   const totalTargetsCount = stats?.telegramTargets.length ?? 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="rounded-2xl bg-brand-navy px-6 py-7 text-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+    <PageEntrance className="space-y-6">
+      {/* Editorial Frosted Header Card */}
+      <div className="glass-panel-strong relative overflow-hidden px-6 py-7 sm:px-8">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-12 -top-16 h-52 w-52 rounded-full bg-gradient-to-br from-white/90 via-zinc-200/50 to-transparent blur-2xl"
+        />
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-gold/20 px-3 py-1 text-xs font-semibold text-brand-gold">
-              <Sparkles className="h-3.5 w-3.5" />
+            <span className="glass-pill">
+              <Sparkles className="h-3.5 w-3.5 text-zinc-600" />
               EdumenAI Admin Studio
             </span>
-            <h1 className="mt-2.5 text-2xl font-bold">Platform Control Center</h1>
-            <p className="mt-1 text-sm text-slate-300">
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl">
+              Platform Control Center
+            </h1>
+            <p className="mt-1.5 max-w-2xl text-sm text-zinc-600">
               Design Lego assessment templates, manage versioned AI prompts, configure specialist
               AI providers, and route Telegram delivery groups.
             </p>
           </div>
-          <Link
-            href="/admin/exercises"
-            className="inline-flex items-center gap-2 rounded-xl bg-brand-gold px-4 py-2.5 text-sm font-semibold text-brand-navy shadow-sm transition hover:bg-brand-goldLight"
-          >
+          <Link href="/admin/exercises" className="glass-btn-primary">
             <Layers className="h-4 w-4" />
             Open Exercises &amp; Builder
           </Link>
@@ -131,57 +135,57 @@ export default function AdminOverviewPage(): React.ReactElement {
       </div>
 
       {/* Top KPI Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+      <StaggerGrid className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerCard className="glass-panel p-5">
+          <div className="text-xs font-bold uppercase tracking-wider text-zinc-500">
             Total Exercises
           </div>
-          <div className="mt-2 text-3xl font-extrabold text-brand-navy">{totalExercises}</div>
-          <p className="mt-1 text-xs text-slate-500">Across Writing, Reading, Listening, Speaking</p>
-        </div>
+          <div className="mt-2 text-3xl font-extrabold text-zinc-900">{totalExercises}</div>
+          <p className="mt-1 text-xs text-zinc-500">Across Writing, Reading, Listening, Speaking</p>
+        </StaggerCard>
 
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
+        <StaggerCard className="glass-panel border-emerald-200/70 bg-emerald-50/45 p-5">
           <div className="text-xs font-bold uppercase tracking-wider text-emerald-700">
             Published Live
           </div>
-          <div className="mt-2 text-3xl font-extrabold text-emerald-900">{publishedCount}</div>
+          <div className="mt-2 text-3xl font-extrabold text-emerald-950">{publishedCount}</div>
           <p className="mt-1 text-xs text-emerald-700">Available in student portal</p>
-        </div>
+        </StaggerCard>
 
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
+        <StaggerCard className="glass-panel border-amber-200/70 bg-amber-50/45 p-5">
           <div className="text-xs font-bold uppercase tracking-wider text-amber-800">
             Active Drafts
           </div>
           <div className="mt-2 text-3xl font-extrabold text-amber-950">{withDraftsCount}</div>
           <p className="mt-1 text-xs text-amber-800">Unpublished edits in progress</p>
-        </div>
+        </StaggerCard>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+        <StaggerCard className="glass-panel p-5">
+          <div className="text-xs font-bold uppercase tracking-wider text-zinc-500">
             AI Keys Ready
           </div>
-          <div className="mt-2 text-3xl font-extrabold text-brand-navy">
+          <div className="mt-2 text-3xl font-extrabold text-zinc-900">
             {activeProvidersCount}{' '}
-            <span className="text-base font-medium text-slate-400">
+            <span className="text-base font-medium text-zinc-400">
               / {stats?.aiProviders.length ?? 4}
             </span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">Encrypted DB or .env providers</p>
-        </div>
-      </div>
+          <p className="mt-1 text-xs text-zinc-500">Encrypted DB or .env providers</p>
+        </StaggerCard>
+      </StaggerGrid>
 
       {/* Runtime Summary Cards */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* AI Routing Summary */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="glass-panel p-6">
+          <div className="flex items-center justify-between border-b border-zinc-200/70 pb-3">
             <div className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-brand-navy" />
-              <h2 className="text-base font-bold text-brand-navy">Active AI Specialist Routes</h2>
+              <Cpu className="h-5 w-5 text-zinc-700" />
+              <h2 className="text-base font-bold text-zinc-900">Active AI Specialist Routes</h2>
             </div>
             <Link
               href="/admin/settings/ai"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-brand-navy hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-700 hover:text-zinc-900 hover:underline"
             >
               Configure AI
               <ArrowRight className="h-3.5 w-3.5" />
@@ -196,24 +200,24 @@ export default function AdminOverviewPage(): React.ReactElement {
             ].map(({ title, route }) => (
               <div
                 key={title}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200/70 bg-white/60 px-4 py-3"
               >
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                     {title}
                   </div>
-                  <div className="mt-0.5 text-sm font-bold text-brand-navy">
+                  <div className="mt-0.5 text-sm font-bold text-zinc-900">
                     {route ? `${route.provider} · ${route.model}` : 'Not resolved'}
                   </div>
                 </div>
                 {route && (
                   <span
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
                       route.source === 'database'
-                        ? 'bg-brand-navy text-brand-gold'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                         : route.source === 'env'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-slate-200 text-slate-700'
+                          ? 'border-zinc-200 bg-white/80 text-zinc-700'
+                          : 'border-zinc-200 bg-zinc-100 text-zinc-600'
                     }`}
                   >
                     {route.source === 'database'
@@ -229,15 +233,15 @@ export default function AdminOverviewPage(): React.ReactElement {
         </div>
 
         {/* Telegram Summary */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="glass-panel p-6">
+          <div className="flex items-center justify-between border-b border-zinc-200/70 pb-3">
             <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-brand-navy" />
-              <h2 className="text-base font-bold text-brand-navy">Telegram Bot &amp; Targets</h2>
+              <Bot className="h-5 w-5 text-zinc-700" />
+              <h2 className="text-base font-bold text-zinc-900">Telegram Bot &amp; Targets</h2>
             </div>
             <Link
               href="/admin/integrations/telegram"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-brand-navy hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-700 hover:text-zinc-900 hover:underline"
             >
               Manage Telegram
               <ArrowRight className="h-3.5 w-3.5" />
@@ -245,12 +249,12 @@ export default function AdminOverviewPage(): React.ReactElement {
           </div>
 
           <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-zinc-200/70 bg-white/60 px-4 py-3">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   Bot Status
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-brand-navy">
+                <div className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-900">
                   {stats?.telegramConfig.hasBotToken && stats.telegramConfig.isEnabled ? (
                     <>
                       <CheckCircle2 className="h-4 w-4 text-emerald-600" />
@@ -263,23 +267,23 @@ export default function AdminOverviewPage(): React.ReactElement {
                   )}
                 </div>
               </div>
-              <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+              <span className="glass-pill">
                 Source: {stats?.telegramConfig.source ?? 'none'}
               </span>
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-zinc-200/70 bg-white/60 px-4 py-3">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   Configured Teacher Groups
                 </div>
-                <div className="mt-0.5 text-sm font-bold text-brand-navy">
+                <div className="mt-0.5 text-sm font-bold text-zinc-900">
                   {activeTargetsCount} active / {totalTargetsCount} total
                 </div>
               </div>
               <Link
                 href="/admin/integrations/telegram"
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                className="glass-btn-secondary !rounded-lg !px-3 !py-1.5 !text-xs"
               >
                 Test &amp; Edit
               </Link>
@@ -289,64 +293,61 @@ export default function AdminOverviewPage(): React.ReactElement {
       </div>
 
       {/* Quick Action Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Link
-          href="/admin/exercises"
-          className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-gold hover:shadow-md"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-navy text-brand-gold">
-              <FileEdit className="h-5 w-5" />
+      <StaggerGrid className="grid gap-4 md:grid-cols-3">
+        <StaggerCard>
+          <Link href="/admin/exercises" className="glass-card group block p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
+                <FileEdit className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-900 group-hover:underline">
+                  Exercises &amp; Lego Builder
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Create skills, drag &amp; drop blocks, edit prompts
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-brand-navy group-hover:underline">
-                Exercises &amp; Lego Builder
-              </h3>
-              <p className="text-xs text-slate-500">
-                Create skills, drag &amp; drop blocks, edit prompts
-              </p>
-            </div>
-          </div>
-        </Link>
+          </Link>
+        </StaggerCard>
 
-        <Link
-          href="/admin/settings/ai"
-          className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-gold hover:shadow-md"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-navy text-brand-gold">
-              <Cpu className="h-5 w-5" />
+        <StaggerCard>
+          <Link href="/admin/settings/ai" className="glass-card group block p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
+                <Cpu className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-900 group-hover:underline">
+                  AI Providers &amp; Routing
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Google, OpenAI, Anthropic, OpenRouter &amp; Audio
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-brand-navy group-hover:underline">
-                AI Providers &amp; Routing
-              </h3>
-              <p className="text-xs text-slate-500">
-                Google, OpenAI, Anthropic, OpenRouter &amp; Audio
-              </p>
-            </div>
-          </div>
-        </Link>
+          </Link>
+        </StaggerCard>
 
-        <Link
-          href="/admin/integrations/telegram"
-          className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-gold hover:shadow-md"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-navy text-brand-gold">
-              <Bot className="h-5 w-5" />
+        <StaggerCard>
+          <Link href="/admin/integrations/telegram" className="glass-card group block p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
+                <Bot className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-900 group-hover:underline">
+                  Telegram Bot &amp; Groups
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Encrypted bot token, multi-group targets &amp; test
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-brand-navy group-hover:underline">
-                Telegram Bot &amp; Groups
-              </h3>
-              <p className="text-xs text-slate-500">
-                Encrypted bot token, multi-group targets &amp; test
-              </p>
-            </div>
-          </div>
-        </Link>
-      </div>
-    </div>
+          </Link>
+        </StaggerCard>
+      </StaggerGrid>
+    </PageEntrance>
   );
 }

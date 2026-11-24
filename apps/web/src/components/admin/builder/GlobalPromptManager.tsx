@@ -295,18 +295,18 @@ export function GlobalPromptManager({
     <div className="grid gap-6 lg:grid-cols-12">
       {/* Left Prompt List */}
       <div className="space-y-4 lg:col-span-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="glass-panel space-y-3 rounded-2xl p-4">
+          <div className="flex items-center justify-between border-b border-zinc-200/70 pb-3">
             <div>
-              <h2 className="text-sm font-bold text-brand-navy">Global Prompts</h2>
-              <p className="text-xs text-slate-500">{promptEntries.length} entries</p>
+              <h2 className="text-sm font-bold tracking-tight text-zinc-900">Global Prompts</h2>
+              <p className="text-xs text-zinc-500">{promptEntries.length} entries</p>
             </div>
             <button
               type="button"
               onClick={handleAddBlank}
-              className="inline-flex items-center gap-1 rounded-xl bg-brand-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-navy/90"
+              className="glass-btn-primary !inline-flex !items-center !gap-1 !px-3 !py-1.5 !text-xs"
             >
-              <Plus className="h-3.5 w-3.5 text-brand-gold" />
+              <Plus className="h-3.5 w-3.5" />
               New Prompt
             </button>
           </div>
@@ -321,21 +321,21 @@ export function GlobalPromptManager({
                   key={idx}
                   type="button"
                   onClick={() => handleSelect(idx)}
-                  className={`w-full rounded-xl border p-3 text-left transition ${
+                  className={`w-full rounded-xl border p-3 text-left transition-colors transition-shadow duration-150 ${
                     isSelected
-                      ? 'border-brand-navy bg-brand-cream/50 ring-2 ring-brand-navy/15'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
+                      ? 'border-zinc-900/80 bg-white/95 shadow-glass ring-2 ring-zinc-900/10'
+                      : 'border-white/80 bg-white/65 backdrop-blur-sm hover:border-zinc-300/90 hover:bg-white/90'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-xs font-bold text-slate-900">
+                    <span className="truncate text-xs font-bold text-zinc-900">
                       {entry.label || '(Untitled Prompt)'}
                     </span>
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">
+                    <span className="rounded-md border border-zinc-200/70 bg-zinc-100/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-zinc-700">
                       {entry.taskType}
                     </span>
                   </div>
-                  <div className="mt-1 truncate font-mono text-[11px] text-slate-500">
+                  <div className="mt-1 truncate font-mono text-[11px] text-zinc-500">
                     {entry.key || '(missing key)'}
                   </div>
                   {refs.length > 0 && (
@@ -349,8 +349,8 @@ export function GlobalPromptManager({
           </div>
 
           {/* Starter Presets */}
-          <div className="border-t border-slate-100 pt-3">
-            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          <div className="border-t border-zinc-200/70 pt-3">
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
               Quick Starter Presets
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -359,9 +359,9 @@ export function GlobalPromptManager({
                   key={preset.key}
                   type="button"
                   onClick={() => handleAddPreset(preset)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-brand-cream hover:border-brand-gold"
+                  className="glass-pill inline-flex items-center gap-1 !px-2.5 !py-1 text-[11px] font-medium text-zinc-700 transition-colors hover:border-zinc-400 hover:bg-white/90 hover:text-zinc-900"
                 >
-                  <Sparkles className="h-3 w-3 text-brand-gold" />
+                  <Sparkles className="h-3 w-3 text-zinc-600" />
                   {preset.key}
                 </button>
               ))}
@@ -373,21 +373,21 @@ export function GlobalPromptManager({
       {/* Right Prompt Editor */}
       <div className="lg:col-span-8">
         {!selectedEntry ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
-            <FileCode2 className="mx-auto h-10 w-10 text-slate-300" />
-            <p className="mt-2 text-sm font-semibold text-slate-700">No prompt selected</p>
-            <p className="mt-1 text-xs text-slate-500">
+          <div className="glass-panel rounded-2xl border border-dashed border-zinc-300/80 p-10 text-center">
+            <FileCode2 className="mx-auto h-10 w-10 text-zinc-300" />
+            <p className="mt-2 text-sm font-semibold text-zinc-800">No prompt selected</p>
+            <p className="mt-1 text-xs text-zinc-500">
               Add a new prompt or select one from the list to edit its instructions and schema.
             </p>
           </div>
         ) : (
-          <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="glass-panel space-y-4 rounded-2xl p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/70 pb-4">
               <div>
-                <h3 className="text-base font-bold text-brand-navy">
+                <h3 className="text-base font-bold tracking-tight text-zinc-900">
                   {selectedEntry.label || '(Untitled Prompt)'}
                 </h3>
-                <p className="font-mono text-xs text-slate-500">
+                <p className="font-mono text-xs text-zinc-500">
                   {selectedEntry.key || '(missing key)'}
                 </p>
               </div>
@@ -396,7 +396,7 @@ export function GlobalPromptManager({
                 <button
                   type="button"
                   onClick={() => handleClone(selectedEntry)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !px-3 !py-1.5 !text-xs"
                 >
                   <Copy className="h-3.5 w-3.5" />
                   Clone
@@ -404,7 +404,7 @@ export function GlobalPromptManager({
                 <button
                   type="button"
                   onClick={() => setConfirmDeleteIndex(safeSelectedIndex)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200/90 bg-rose-50/90 px-3 py-1.5 text-xs font-semibold text-rose-700 backdrop-blur-sm transition-colors hover:bg-rose-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
@@ -413,13 +413,13 @@ export function GlobalPromptManager({
             </div>
 
             {confirmDeleteIndex === safeSelectedIndex && (
-              <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-xs text-red-900 space-y-2">
+              <div className="space-y-2 rounded-xl border border-rose-300/90 bg-rose-50/90 p-4 text-xs text-rose-900 backdrop-blur-sm">
                 <div className="flex items-start gap-2 font-semibold">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
                   <div>
                     <p>Delete prompt &quot;{selectedEntry.key || selectedEntry.label}&quot;?</p>
                     {(referencedBlocksByPromptKey.get(selectedEntry.key)?.length ?? 0) > 0 && (
-                      <p className="mt-1 font-normal text-red-800">
+                      <p className="mt-1 font-normal text-rose-800">
                         Warning: This prompt is currently referenced by canvas blocks:{' '}
                         <strong>
                           {referencedBlocksByPromptKey.get(selectedEntry.key)?.join(', ')}
@@ -433,14 +433,14 @@ export function GlobalPromptManager({
                   <button
                     type="button"
                     onClick={() => handleDelete(safeSelectedIndex)}
-                    className="rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white hover:bg-red-700"
+                    className="rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-rose-700"
                   >
                     Confirm Delete
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmDeleteIndex(null)}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50"
+                    className="glass-btn-secondary !rounded-lg !px-3 !py-1.5 !text-xs"
                   >
                     Cancel
                   </button>
@@ -450,42 +450,42 @@ export function GlobalPromptManager({
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-slate-700">Key *</label>
+                <label className="block text-xs font-semibold text-zinc-700">Key *</label>
                 <input
                   type="text"
                   value={selectedEntry.key}
                   onChange={(e) =>
                     updateSelected({ key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })
                   }
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs text-slate-900 focus:border-brand-navy focus:outline-none"
+                  className="glass-input w-full !px-3 !py-2 font-mono !text-xs"
                 />
                 {!selectedEntry.key.trim() ? (
-                  <p className="text-[11px] font-medium text-red-600">
+                  <p className="text-[11px] font-medium text-rose-600">
                     Key is required (a-z, 0-9, _).
                   </p>
                 ) : (duplicateKeys.get(selectedEntry.key) ?? 0) > 1 ? (
-                  <p className="text-[11px] font-medium text-red-600">
+                  <p className="text-[11px] font-medium text-rose-600">
                     Key must be unique across prompts.
                   </p>
                 ) : null}
               </div>
 
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-slate-700">Label *</label>
+                <label className="block text-xs font-semibold text-zinc-700">Label *</label>
                 <input
                   type="text"
                   value={selectedEntry.label}
                   onChange={(e) => updateSelected({ label: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-navy focus:outline-none"
+                  className="glass-input w-full !px-3 !py-2 !text-xs"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-slate-700">AI Task Type</label>
+                <label className="block text-xs font-semibold text-zinc-700">AI Task Type</label>
                 <select
                   value={selectedEntry.taskType}
                   onChange={(e) => updateSelected({ taskType: e.target.value as AiTaskType })}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-900"
+                  className="glass-input w-full !px-3 !py-2 !text-xs font-medium"
                 >
                   <option value="vision">vision (OCR / Image / PDF)</option>
                   <option value="evaluation">evaluation (Marking / Rubric)</option>
@@ -495,7 +495,7 @@ export function GlobalPromptManager({
             </div>
 
             <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700">
+              <label className="block text-xs font-semibold text-zinc-700">
                 Description (optional)
               </label>
               <input
@@ -505,16 +505,16 @@ export function GlobalPromptManager({
                   updateSelected({ description: e.target.value || undefined })
                 }
                 placeholder="Brief note about when this prompt runs..."
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900"
+                className="glass-input w-full !px-3 !py-2 !text-xs"
               />
             </div>
 
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-slate-700">
+                <label className="block text-xs font-semibold text-zinc-700">
                   Prompt Content (Verbatim System Instructions) *
                 </label>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] text-zinc-400">
                   {selectedEntry.content.length} chars
                 </span>
               </div>
@@ -522,20 +522,20 @@ export function GlobalPromptManager({
                 rows={11}
                 value={selectedEntry.content}
                 onChange={(e) => updateSelected({ content: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs leading-relaxed text-slate-900 focus:border-brand-navy focus:outline-none"
+                className="glass-input w-full !px-3 !py-2 font-mono !text-xs leading-relaxed"
               />
             </div>
 
-            <div className="space-y-2 border-t border-slate-100 pt-4">
+            <div className="space-y-2 border-t border-zinc-200/70 pt-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="block text-xs font-semibold text-slate-700">
+                <label className="block text-xs font-semibold text-zinc-700">
                   Structured Output JSON Schema (optional)
                 </label>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleLoadDefaultMarkingSchema}
-                    className="rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-brand-cream"
+                    className="glass-btn-secondary !rounded-lg !px-2.5 !py-1 !text-[11px]"
                   >
                     Load Default Marking Schema
                   </button>
@@ -545,7 +545,7 @@ export function GlobalPromptManager({
                       Valid JSON
                     </span>
                   ) : (
-                    <span className="text-[11px] font-semibold text-red-600">
+                    <span className="text-[11px] font-semibold text-rose-600">
                       {schemaValidation.error}
                     </span>
                   )}
@@ -557,7 +557,7 @@ export function GlobalPromptManager({
                 value={activeSchemaText}
                 onChange={(e) => handleSchemaChange(e.target.value)}
                 placeholder="Leave blank for plain text output, or paste a JSON Schema object..."
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-800 focus:border-brand-navy focus:outline-none"
+                className="glass-input w-full !bg-white/60 !px-3 !py-2 font-mono !text-[11px]"
               />
             </div>
           </div>

@@ -2,6 +2,104 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  html {
+    background-color: #f4f5f7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    color: #18181b;
+    background-color: #f4f5f7;
+    background-image:
+      radial-gradient(1100px 600px at 12% -8%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 60%),
+      radial-gradient(900px 520px at 100% 0%, rgba(214, 220, 230, 0.55), rgba(214, 220, 230, 0) 62%),
+      radial-gradient(900px 600px at 50% 110%, rgba(205, 212, 224, 0.5), rgba(205, 212, 224, 0) 65%),
+      linear-gradient(180deg, #f4f5f7 0%, #ebeef2 100%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: rgba(24, 24, 27, 0.14);
+  }
+
+  /* Refined thin scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(113, 113, 122, 0.4) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(113, 113, 122, 0.32);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(82, 82, 91, 0.55);
+  }
+}
+
+@layer components {
+  /* Standard frosted glass surface */
+  .glass-panel {
+    @apply rounded-2xl border border-white/80 bg-white/75 shadow-glass ring-1 ring-zinc-900/[0.05] backdrop-blur-xl;
+  }
+
+  /* Elevated / more opaque frosted surface (modals, hero, sticky bars) */
+  .glass-panel-strong {
+    @apply rounded-2xl border border-white/90 bg-white/85 shadow-glass-lg ring-1 ring-zinc-900/[0.06] backdrop-blur-2xl;
+  }
+
+  /* Interactive frosted card with hover lift */
+  .glass-card {
+    @apply rounded-2xl border border-white/80 bg-white/75 shadow-glass ring-1 ring-zinc-900/[0.05] backdrop-blur-xl transition-all duration-300 ease-out;
+  }
+
+  .glass-card:hover {
+    @apply -translate-y-0.5 bg-white/90 shadow-glass-lg ring-zinc-900/10;
+  }
+
+  /* Neutral frosted pill / badge (use emerald/amber/rose utilities ONLY for status) */
+  .glass-pill {
+    @apply inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-white/80 bg-white/70 px-2.5 py-0.5 text-xs font-semibold text-zinc-700 ring-1 ring-zinc-900/[0.06] backdrop-blur-md;
+  }
+
+  .glass-input {
+    @apply w-full rounded-xl border border-zinc-200/80 bg-white/70 px-3.5 py-2.5 text-sm text-zinc-900 shadow-[inset_0_1px_2px_rgba(15,17,21,0.04)] backdrop-blur-md transition-all duration-200 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white/95 focus:outline-none focus:ring-4 focus:ring-zinc-900/[0.07] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  /* Charcoal primary button with specular top highlight */
+  .glass-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_1px_2px_rgba(15,17,21,0.2),0_8px_16px_-6px_rgba(15,17,21,0.35)] transition-all duration-200 hover:bg-zinc-800 active:scale-[0.98] focus:outline-none focus-visible:ring-4 focus-visible:ring-zinc-900/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+  }
+
+  /* Frosted silver secondary button */
+  .glass-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-white/90 bg-white/70 px-4 py-2.5 text-sm font-semibold text-zinc-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_2px_rgba(15,17,21,0.06)] ring-1 ring-zinc-900/[0.08] backdrop-blur-md transition-all duration-200 hover:bg-white/95 hover:ring-zinc-900/[0.14] active:scale-[0.98] focus:outline-none focus-visible:ring-4 focus-visible:ring-zinc-900/15 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+  }
+
+  /* Drag & drop insertion indicator (builder) */
+  .insertion-line-glow {
+    @apply h-0.5 w-full rounded-full bg-zinc-900;
+    box-shadow:
+      0 0 0 3px rgba(24, 24, 27, 0.08),
+      0 0 14px rgba(24, 24, 27, 0.35);
+  }
+}
+
 mark.correction {
   background-color: #fef08a;
   color: #1f2937;
@@ -19,6 +117,7 @@ mark.addition {
 @media print {
   body {
     background: #ffffff !important;
+    background-image: none !important;
     color: #111827 !important;
   }
 
@@ -29,6 +128,14 @@ mark.addition {
 
   .no-print {
     display: none !important;
+  }
+
+  .glass-panel,
+  .glass-panel-strong,
+  .glass-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
   }
 
   mark.correction {

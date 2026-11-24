@@ -3,14 +3,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  closestCenter,
+  closestCorners,
   DndContext,
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
+  pointerWithin,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
+  type DragOverEvent,
   type DragStartEvent
 } from '@dnd-kit/core';
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
@@ -22,12 +26,14 @@ import type {
   TemplateBlock,
   TemplateConfig
 } from '@edumenai/shared';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
   Eye,
   FileCode2,
+  GripVertical,
   Layers,
   Loader2,
   RefreshCw,
@@ -45,9 +51,14 @@ import {
   type AdminPromptVersionView
 } from '../../../lib/admin-exercises-api';
 import { getCached, isCacheFresh } from '../../../lib/client-cache';
+import {
+  PageEntrance,
+  SlidingTabButton,
+  SPRING_GENTLE
+} from '../../ui/MotionPrimitives';
 import { BlockInspector, inferInputFieldMapFromCanvas } from './BlockInspector';
 import { BlockPalette } from './BlockPalette';
-import { BuilderCanvas } from './BuilderCanvas';
+import { BuilderCanvas, type DropIndicator } from './BuilderCanvas';
 import { GlobalPromptManager } from './GlobalPromptManager';
 import { LivePreviewPane } from './LivePreviewPane';
 
@@ -135,6 +146,8 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
   const [showMetaDrawer, setShowMetaDrawer] = useState<boolean>(false);
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [activeDragLabel, setActiveDragLabel] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
+  const [isPaletteDragging, setIsPaletteDragging] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(() => {
     if (!code) return false;
@@ -149,9 +162,18 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
   } | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+
+  const pointerFirstCollisionDetection: CollisionDetection = useCallback((args) => {
+    const pointerHits = pointerWithin(args);
+    if (pointerHits.length > 0) {
+      const blockHits = pointerHits.filter((hit) => hit.id !== 'builder-canvas');
+      return blockHits.length > 0 ? blockHits : pointerHits;
+    }
+    return closestCorners(args);
+  }, []);
 
   const hydrateFromDetail = useCallback(
     (detail: AdminExerciseDetail, preferredVersion?: AdminPromptVersionView) => {
@@ -403,6 +425,54 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
     setIsDirty(true);
   };
 
+  const computeDropIndicator = useCallback(
+    (event: {
+      active: DragOverEvent['active'];
+      over: DragOverEvent['over'];
+    }): DropIndicator | null => {
+      const { active, over } = event;
+      if (!over) return null;
+
+      const overId = String(over.id);
+      if (overId === 'builder-canvas') {
+        return { targetId: 'canvas-end', position: 'after' };
+      }
+
+      const activeData = active.data.current as { source?: string } | undefined;
+      if (activeData?.source === 'canvas' && active.id === over.id) {
+        return null;
+      }
+
+      const translated = active.rect.current.translated;
+      const activeMidY = translated
+        ? translated.top + translated.height / 2
+        : over.rect.top + over.rect.height / 2;
+      const overMidY = over.rect.top + over.rect.height / 2;
+
+      return {
+        targetId: overId,
+        position: activeMidY < overMidY ? 'before' : 'after'
+      };
+    },
+    []
+  );
+
+  const syncDropIndicator = useCallback(
+    (event: {
+      active: DragOverEvent['active'];
+      over: DragOverEvent['over'];
+    }): void => {
+      const next = computeDropIndicator(event);
+      setDropIndicator((prev) => {
+        if (prev?.targetId === next?.targetId && prev?.position === next?.position) {
+          return prev;
+        }
+        return next;
+      });
+    },
+    [computeDropIndicator]
+  );
+
   const handleDragStart = (event: DragStartEvent): void => {
     const data = event.active.data.current as
       | { source?: string; blockType?: string; blockId?: string }
@@ -411,14 +481,34 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
     if (data?.source === 'palette' && data.blockType) {
       const def = getBlock(data.blockType);
       setActiveDragLabel(def?.name ?? data.blockType);
+      setIsPaletteDragging(true);
     } else if (data?.source === 'canvas' && data.blockId) {
       const blk = templateSchema.blocks.find((b) => b.id === data.blockId);
       setActiveDragLabel(blk?.label || blk?.type || 'Block');
+      setIsPaletteDragging(false);
     }
   };
 
-  const handleDragEnd = (event: DragEndEvent): void => {
+  const handleDragOver = (event: DragOverEvent): void => {
+    syncDropIndicator(event);
+  };
+
+  const handleDragMove = (event: DragMoveEvent): void => {
+    syncDropIndicator(event);
+  };
+
+  const handleDragCancel = (): void => {
     setActiveDragLabel(null);
+    setDropIndicator(null);
+    setIsPaletteDragging(false);
+  };
+
+  const handleDragEnd = (event: DragEndEvent): void => {
+    const finalIndicator = computeDropIndicator(event) ?? dropIndicator;
+    setActiveDragLabel(null);
+    setDropIndicator(null);
+    setIsPaletteDragging(false);
+
     const { active, over } = event;
     if (!over) return;
 
@@ -430,28 +520,52 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
       const def = getBlock(activeData.blockType);
       if (!def) return;
       const sorted = [...templateSchema.blocks].sort((a, b) => a.order - b.order);
-      const overIdx = sorted.findIndex((b) => b.id === over.id);
-      handleAddBlock(def, overIdx !== -1 ? overIdx : undefined);
+      if (finalIndicator && finalIndicator.targetId !== 'canvas-end') {
+        const overIdx = sorted.findIndex((b) => b.id === finalIndicator.targetId);
+        const insertIdx =
+          overIdx !== -1
+            ? finalIndicator.position === 'before'
+              ? overIdx
+              : overIdx + 1
+            : undefined;
+        handleAddBlock(def, insertIdx);
+      } else {
+        handleAddBlock(def);
+      }
       return;
     }
 
-    if (active.id !== over.id) {
-      const sorted = [...templateSchema.blocks].sort((a, b) => a.order - b.order);
-      const oldIdx = sorted.findIndex((b) => b.id === active.id);
-      const newIdx = sorted.findIndex((b) => b.id === over.id);
-      if (oldIdx !== -1 && newIdx !== -1) {
-        const reordered = arrayMove(sorted, oldIdx, newIdx);
-        setTemplateSchema((prev) => ({ ...prev, blocks: reindexBlocks(reordered) }));
-        setIsDirty(true);
-      }
+    const sorted = [...templateSchema.blocks].sort((a, b) => a.order - b.order);
+    const oldIdx = sorted.findIndex((b) => b.id === active.id);
+    if (oldIdx === -1) return;
+
+    let finalIdx = -1;
+    if (finalIndicator?.targetId === 'canvas-end') {
+      finalIdx = sorted.length - 1;
+    } else if (finalIndicator) {
+      const overIdx = sorted.findIndex((b) => b.id === finalIndicator.targetId);
+      if (overIdx === -1) return;
+      const insertIdx = finalIndicator.position === 'before' ? overIdx : overIdx + 1;
+      finalIdx =
+        oldIdx < insertIdx
+          ? Math.max(0, Math.min(sorted.length - 1, insertIdx - 1))
+          : Math.max(0, Math.min(sorted.length - 1, insertIdx));
+    } else if (active.id !== over.id) {
+      finalIdx = sorted.findIndex((b) => b.id === over.id);
+    }
+
+    if (finalIdx !== -1 && oldIdx !== finalIdx) {
+      const reordered = arrayMove(sorted, oldIdx, finalIdx);
+      setTemplateSchema((prev) => ({ ...prev, blocks: reindexBlocks(reordered) }));
+      setIsDirty(true);
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <Loader2 className="h-5 w-5 animate-spin text-brand-navy" />
-        <span className="text-sm font-medium text-slate-700">
+      <div className="glass-panel flex items-center gap-3 rounded-2xl p-8">
+        <Loader2 className="h-5 w-5 animate-spin text-zinc-900" />
+        <span className="text-sm font-medium text-zinc-700">
           Loading Exercise Builder...
         </span>
       </div>
@@ -460,23 +574,23 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
 
   if (loadError || !exercise || !activeVersion) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-900">
+      <div className="rounded-2xl border border-rose-200/85 bg-rose-50/90 p-6 text-rose-900 backdrop-blur-md">
         <h2 className="font-bold">Unable to load Exercise Builder</h2>
         <p className="mt-1 text-sm">{loadError || 'Exercise or version not found.'}</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => void loadExercise(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-navy px-4 py-2 text-xs font-semibold text-white hover:bg-brand-navy/90"
+            className="glass-btn-primary !inline-flex !items-center !gap-1.5 !px-4 !py-2 !text-xs"
           >
-            <RefreshCw className="h-3.5 w-3.5 text-brand-gold" />
+            <RefreshCw className="h-3.5 w-3.5" />
             Retry
           </button>
           <Link
             href="/admin/exercises"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-navy underline"
+            className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !px-3.5 !py-2 !text-xs"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5" />
             Back to Exercises
           </Link>
         </div>
@@ -488,14 +602,14 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
     templateSchema.blocks.find((b) => b.id === selectedBlockId) ?? null;
 
   return (
-    <div className="space-y-5">
+    <PageEntrance className="space-y-5">
       {/* Top Builder Toolbar */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+      <div className="glass-panel space-y-4 rounded-2xl p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/admin/exercises"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !px-3 !py-1.5 !text-xs"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Exercises
@@ -503,8 +617,10 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
 
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-bold text-brand-navy">{title || exercise.title}</h1>
-                <span className="rounded-md bg-brand-navy px-2 py-0.5 text-[11px] font-bold uppercase text-brand-gold">
+                <h1 className="text-lg font-bold tracking-tight text-zinc-900">
+                  {title || exercise.title}
+                </h1>
+                <span className="rounded-md bg-zinc-900 px-2 py-0.5 text-[11px] font-bold uppercase text-white">
                   {skill}
                 </span>
                 <span
@@ -517,12 +633,12 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
                   {activeVersion.status} v{activeVersion.version}
                 </span>
                 {isDirty && (
-                  <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700 border border-red-200">
+                  <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700">
                     Unsaved changes
                   </span>
                 )}
               </div>
-              <p className="font-mono text-xs text-slate-500">code: {exercise.code}</p>
+              <p className="font-mono text-xs text-zinc-500">code: {exercise.code}</p>
             </div>
           </div>
 
@@ -530,7 +646,9 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
             <button
               type="button"
               onClick={() => setShowMetaDrawer((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              className={`glass-btn-secondary !inline-flex !items-center !gap-1.5 !px-3 !py-2 !text-xs ${
+                showMetaDrawer ? '!border-zinc-900/30 !bg-white ring-1 ring-zinc-900/10' : ''
+              }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Metadata &amp; Badges
@@ -540,7 +658,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
               type="button"
               onClick={() => void handleSaveDraft()}
               disabled={isSaving || isPublishing}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-brand-navy hover:bg-slate-50 disabled:opacity-60"
+              className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !px-3.5 !py-2 !text-xs disabled:opacity-60"
             >
               {isSaving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -554,7 +672,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
               type="button"
               onClick={() => void handleOpenPreview()}
               disabled={isSaving || isPublishing}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-brand-gold bg-brand-cream px-3.5 py-2 text-xs font-semibold text-brand-navy hover:bg-brand-gold/20 disabled:opacity-60"
+              className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !border-zinc-300/90 !px-3.5 !py-2 !text-xs disabled:opacity-60"
             >
               <Eye className="h-3.5 w-3.5" />
               Live Preview
@@ -564,12 +682,12 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
               type="button"
               onClick={() => void handlePublish()}
               disabled={isSaving || isPublishing}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-navy px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-navy/90 disabled:opacity-60"
+              className="glass-btn-primary !inline-flex !items-center !gap-1.5 !px-4 !py-2 !text-xs disabled:opacity-60"
             >
               {isPublishing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-gold" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Rocket className="h-3.5 w-3.5 text-brand-gold" />
+                <Rocket className="h-3.5 w-3.5" />
               )}
               Publish
             </button>
@@ -577,147 +695,158 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
         </div>
 
         {/* Collapsible Metadata & Settings Drawer */}
-        {showMetaDrawer && (
-          <div className="grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700">Title</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                  setIsDirty(true);
-                }}
-                className="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs"
-              />
-            </div>
+        <AnimatePresence initial={false}>
+          {showMetaDrawer && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={SPRING_GENTLE}
+              className="overflow-hidden"
+            >
+              <div className="grid gap-4 border-t border-zinc-200/70 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-zinc-700">Title</label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                      setIsDirty(true);
+                    }}
+                    className="glass-input w-full !px-3 !py-1.5 !text-xs"
+                  />
+                </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700">Skill</label>
-              <select
-                value={skill}
-                onChange={(e) => {
-                  setSkill(e.target.value as ExerciseSkill);
-                  setIsDirty(true);
-                }}
-                className="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs"
-              >
-                <option value="WRITING">WRITING</option>
-                <option value="READING">READING</option>
-                <option value="LISTENING">LISTENING</option>
-                <option value="SPEAKING">SPEAKING</option>
-              </select>
-            </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-zinc-700">Skill</label>
+                  <select
+                    value={skill}
+                    onChange={(e) => {
+                      setSkill(e.target.value as ExerciseSkill);
+                      setIsDirty(true);
+                    }}
+                    className="glass-input w-full !px-3 !py-1.5 !text-xs"
+                  >
+                    <option value="WRITING">WRITING</option>
+                    <option value="READING">READING</option>
+                    <option value="LISTENING">LISTENING</option>
+                    <option value="SPEAKING">SPEAKING</option>
+                  </select>
+                </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700">Total Marks</label>
-              <input
-                type="number"
-                min={1}
-                max={500}
-                value={totalMarks}
-                onChange={(e) => {
-                  setTotalMarks(Number(e.target.value) || 1);
-                  setIsDirty(true);
-                }}
-                className="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs"
-              />
-            </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-zinc-700">Total Marks</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={totalMarks}
+                    onChange={(e) => {
+                      setTotalMarks(Number(e.target.value) || 1);
+                      setIsDirty(true);
+                    }}
+                    className="glass-input w-full !px-3 !py-1.5 !text-xs"
+                  />
+                </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700">
-                Header Badges (comma-separated)
-              </label>
-              <input
-                type="text"
-                value={templateSchema.settings.badges.join(', ')}
-                onChange={(e) => {
-                  const badges = e.target.value
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-                  setTemplateSchema((prev) => ({
-                    ...prev,
-                    settings: { ...prev.settings, badges }
-                  }));
-                  setIsDirty(true);
-                }}
-                className="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs"
-              />
-            </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-zinc-700">
+                    Header Badges (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={templateSchema.settings.badges.join(', ')}
+                    onChange={(e) => {
+                      const badges = e.target.value
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                      setTemplateSchema((prev) => ({
+                        ...prev,
+                        settings: { ...prev.settings, badges }
+                      }));
+                      setIsDirty(true);
+                    }}
+                    className="glass-input w-full !px-3 !py-1.5 !text-xs"
+                  />
+                </div>
 
-            <div className="space-y-1 sm:col-span-2 lg:col-span-3">
-              <label className="block text-xs font-semibold text-slate-700">Description</label>
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => {
-                  setDescription(e.target.value);
-                  setIsDirty(true);
-                }}
-                className="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs"
-              />
-            </div>
+                <div className="space-y-1 sm:col-span-2 lg:col-span-3">
+                  <label className="block text-xs font-semibold text-zinc-700">Description</label>
+                  <input
+                    type="text"
+                    value={description}
+                    onChange={(e) => {
+                      setDescription(e.target.value);
+                      setIsDirty(true);
+                    }}
+                    className="glass-input w-full !px-3 !py-1.5 !text-xs"
+                  />
+                </div>
 
-            <div className="flex items-end pb-1.5">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={templateSchema.settings.showHeaderBadges}
-                  onChange={(e) => {
-                    setTemplateSchema((prev) => ({
-                      ...prev,
-                      settings: { ...prev.settings, showHeaderBadges: e.target.checked }
-                    }));
-                    setIsDirty(true);
-                  }}
-                />
-                Show Header Badges
-              </label>
-            </div>
-          </div>
-        )}
+                <div className="flex items-end pb-1.5">
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={templateSchema.settings.showHeaderBadges}
+                      onChange={(e) => {
+                        setTemplateSchema((prev) => ({
+                          ...prev,
+                          settings: { ...prev.settings, showHeaderBadges: e.target.checked }
+                        }));
+                        setIsDirty(true);
+                      }}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900"
+                    />
+                    Show Header Badges
+                  </label>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Sub-Tabs */}
-        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-          <button
-            type="button"
-            onClick={() => setActiveTab('canvas')}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition ${
-              activeTab === 'canvas'
-                ? 'bg-brand-navy text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
+        <div className="border-t border-zinc-200/70 pt-3">
+          <div
+            role="tablist"
+            aria-label="Builder workspace views"
+            className="inline-flex flex-wrap gap-1.5 rounded-2xl border border-zinc-200/70 bg-white/55 p-1 backdrop-blur-sm"
           >
-            <Layers className="h-3.5 w-3.5" />
-            Canvas Builder ({templateSchema.blocks.length})
-          </button>
+            <SlidingTabButton
+              layoutId="builder-tab-pill"
+              isActive={activeTab === 'canvas'}
+              onClick={() => setActiveTab('canvas')}
+              asTab
+              className="!py-2 !text-xs"
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Canvas Builder ({templateSchema.blocks.length})
+            </SlidingTabButton>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('prompts')}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition ${
-              activeTab === 'prompts'
-                ? 'bg-brand-navy text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <FileCode2 className="h-3.5 w-3.5" />
-            Global Prompt Manager ({promptEntries.length})
-          </button>
+            <SlidingTabButton
+              layoutId="builder-tab-pill"
+              isActive={activeTab === 'prompts'}
+              onClick={() => setActiveTab('prompts')}
+              asTab
+              className="!py-2 !text-xs"
+            >
+              <FileCode2 className="h-3.5 w-3.5" />
+              Global Prompt Manager ({promptEntries.length})
+            </SlidingTabButton>
 
-          <button
-            type="button"
-            onClick={() => void handleOpenPreview()}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition ${
-              activeTab === 'preview'
-                ? 'bg-brand-navy text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            Live Interactive Preview
-          </button>
+            <SlidingTabButton
+              layoutId="builder-tab-pill"
+              isActive={activeTab === 'preview'}
+              onClick={() => void handleOpenPreview()}
+              asTab
+              className="!py-2 !text-xs"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Live Interactive Preview
+            </SlidingTabButton>
+          </div>
         </div>
       </div>
 
@@ -725,10 +854,10 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
       {statusBanner && (
         <div
           role="status"
-          className={`flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm font-medium ${
+          className={`flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm font-medium backdrop-blur-sm ${
             statusBanner.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-red-200 bg-red-50 text-red-800'
+              ? 'border-emerald-200/90 bg-emerald-50/90 text-emerald-800'
+              : 'border-rose-200/90 bg-rose-50/90 text-rose-800'
           }`}
         >
           {statusBanner.type === 'success' ? (
@@ -744,11 +873,14 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
       {activeTab === 'canvas' && (
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={pointerFirstCollisionDetection}
           onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragMove={handleDragMove}
+          onDragCancel={handleDragCancel}
           onDragEnd={handleDragEnd}
         >
-          <div className="grid gap-5 lg:grid-cols-12 items-start">
+          <div className="grid items-start gap-5 lg:grid-cols-12">
             <div className="lg:col-span-3">
               <BlockPalette onAddBlock={(def) => handleAddBlock(def)} />
             </div>
@@ -757,6 +889,8 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
               <BuilderCanvas
                 blocks={templateSchema.blocks}
                 selectedBlockId={selectedBlockId}
+                dropIndicator={dropIndicator}
+                isPaletteDragging={isPaletteDragging}
                 onSelectBlock={setSelectedBlockId}
                 onMoveBlock={handleMoveBlock}
                 onDuplicateBlock={handleDuplicateBlock}
@@ -775,10 +909,16 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
             </div>
           </div>
 
-          <DragOverlay>
+          <DragOverlay
+            dropAnimation={{
+              duration: 180,
+              easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+            }}
+          >
             {activeDragLabel ? (
-              <div className="rounded-xl border border-brand-gold bg-brand-navy px-4 py-2 text-xs font-bold text-white shadow-lg">
-                {activeDragLabel}
+              <div className="glass-panel-strong flex scale-[1.02] items-center gap-2 rounded-xl px-4 py-3 text-xs font-bold text-zinc-900 shadow-2xl ring-2 ring-zinc-900/15">
+                <GripVertical className="h-4 w-4 text-zinc-400" />
+                <span>{activeDragLabel}</span>
               </div>
             ) : null}
           </DragOverlay>
@@ -830,6 +970,6 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
           promptEntries={promptEntries}
         />
       )}
-    </div>
+    </PageEntrance>
   );
 }

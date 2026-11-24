@@ -22,6 +22,7 @@ import {
   type PublishedExerciseDetail
 } from '../lib/api';
 import { getCached, isCacheFresh } from '../lib/client-cache';
+import { PageEntrance } from './ui/MotionPrimitives';
 
 interface ExerciseRunnerProps {
   code: string;
@@ -270,9 +271,9 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
   if (isLoading) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <Loader2 className="h-5 w-5 animate-spin text-brand-navy" />
-          <span className="text-sm font-medium text-slate-700">Loading exercise workspace...</span>
+        <div className="glass-panel-strong flex items-center gap-3 p-6">
+          <Loader2 className="h-5 w-5 animate-spin text-zinc-700" />
+          <span className="text-sm font-medium text-zinc-700">Loading exercise workspace...</span>
         </div>
       </div>
     );
@@ -281,12 +282,12 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
   if (loadError || !exercise) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-900">
+        <div className="rounded-2xl border border-rose-200/80 bg-rose-50/80 p-6 text-rose-900 shadow-glass backdrop-blur-xl">
           <h2 className="text-base font-bold">Unable to load exercise</h2>
           <p className="mt-1 text-sm">{loadError || 'Exercise not found.'}</p>
           <Link
             href="/exercises"
-            className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-navy underline"
+            className="glass-btn-secondary mt-4"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Exercises
@@ -314,41 +315,46 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
   const settings = exercise.templateSchema.settings;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+    <PageEntrance className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
       <div className="mb-4">
         <Link
           href="/exercises"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-brand-navy"
+          className="glass-btn-secondary !rounded-full !px-3.5 !py-1.5 text-xs"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-3.5 w-3.5" />
           Back to Exercises
         </Link>
       </div>
 
       {/* Exercise Header */}
-      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="inline-flex items-center rounded-md bg-brand-navy px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-brand-gold whitespace-nowrap shrink-0">
+      <div className="glass-panel-strong relative mb-6 overflow-hidden p-6 sm:p-8">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-gradient-to-br from-white via-zinc-200/60 to-transparent blur-2xl"
+        />
+        <div className="relative flex flex-wrap items-center justify-between gap-2">
+          <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-zinc-900 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
             {exercise.skill}
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Published v{exercise.activeVersion.version}
           </span>
         </div>
 
-        <h1 className="mt-3 text-2xl font-bold text-brand-navy">{exercise.title}</h1>
+        <h1 className="relative mt-4 text-2xl font-extrabold tracking-tight text-zinc-950 sm:text-3xl">
+          {exercise.title}
+        </h1>
         {exercise.description && (
-          <p className="mt-1.5 text-sm text-slate-600">{exercise.description}</p>
+          <p className="relative mt-2 text-sm leading-relaxed text-zinc-600 sm:text-base">
+            {exercise.description}
+          </p>
         )}
 
         {settings.showHeaderBadges && settings.badges.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="relative mt-4 flex flex-wrap gap-2">
             {settings.badges.map((badge, idx) => (
-              <span
-                key={idx}
-                className="rounded-full border border-brand-gold/40 bg-brand-cream px-3 py-0.5 text-xs font-semibold text-brand-navy"
-              >
+              <span key={idx} className="glass-pill">
                 {badge}
               </span>
             ))}
@@ -360,10 +366,10 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
       {submitError && (
         <div
           role="alert"
-          className={`mb-6 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
+          className={`mb-6 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm backdrop-blur-xl shadow-glass ${
             submitError.isQuota
-              ? 'border-amber-300 bg-amber-50 text-amber-900'
-              : 'border-red-200 bg-red-50 text-red-800'
+              ? 'border-amber-300/80 bg-amber-50/85 text-amber-900'
+              : 'border-rose-200/80 bg-rose-50/85 text-rose-800'
           }`}
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -378,6 +384,6 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
 
       {/* Dynamic Lego Template */}
       <TemplateRenderer template={exercise.templateSchema} ctx={ctx} />
-    </div>
+    </PageEntrance>
   );
 }

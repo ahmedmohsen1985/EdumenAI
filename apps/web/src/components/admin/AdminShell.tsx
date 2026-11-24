@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   AlertTriangle,
@@ -22,6 +21,7 @@ import {
   clearStoredAdminKey,
   setStoredAdminKey
 } from '../../lib/admin-auth';
+import { PageEntrance, SlidingTabButton } from '../ui/MotionPrimitives';
 
 type AuthState =
   | { status: 'loading' }
@@ -107,9 +107,9 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
   if (authState.status === 'loading') {
     return (
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-        <div className="flex items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white p-10 shadow-sm">
-          <Loader2 className="h-5 w-5 animate-spin text-brand-navy" />
-          <span className="text-sm font-medium text-slate-700">
+        <div className="glass-panel flex items-center justify-center gap-3 p-10">
+          <Loader2 className="h-5 w-5 animate-spin text-zinc-700" />
+          <span className="text-sm font-medium text-zinc-700">
             Verifying Admin Studio session...
           </span>
         </div>
@@ -119,8 +119,8 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
 
   if (authState.status === 'unconfigured') {
     return (
-      <div className="mx-auto max-w-xl px-4 py-16 sm:px-6">
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-8 shadow-sm">
+      <PageEntrance className="mx-auto max-w-xl px-4 py-16 sm:px-6">
+        <div className="glass-panel-strong border-amber-300/80 bg-amber-50/75 p-8">
           <div className="flex items-center gap-3 text-amber-900">
             <ShieldAlert className="h-7 w-7 shrink-0 text-amber-700" />
             <div>
@@ -131,50 +131,50 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
           <p className="mt-4 text-sm leading-relaxed text-amber-900">
             {authState.errorMessage}
           </p>
-          <p className="mt-3 rounded-xl border border-amber-200 bg-white/70 px-3.5 py-2.5 font-mono text-xs text-amber-950">
+          <p className="mt-3 rounded-xl border border-amber-200/80 bg-white/75 px-3.5 py-2.5 font-mono text-xs text-amber-950">
             Set ADMIN_ACCESS_KEY in your API environment and restart the API service.
           </p>
         </div>
-      </div>
+      </PageEntrance>
     );
   }
 
   if (authState.status === 'error') {
     return (
-      <div className="mx-auto max-w-xl px-4 py-16 sm:px-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-8 shadow-sm">
-          <div className="flex items-center gap-3 text-red-900">
-            <AlertTriangle className="h-6 w-6 shrink-0 text-red-600" />
+      <PageEntrance className="mx-auto max-w-xl px-4 py-16 sm:px-6">
+        <div className="glass-panel-strong border-rose-200/80 bg-rose-50/75 p-8">
+          <div className="flex items-center gap-3 text-rose-900">
+            <AlertTriangle className="h-6 w-6 shrink-0 text-rose-600" />
             <h1 className="text-lg font-bold">Admin Studio Connection Error</h1>
           </div>
-          <p className="mt-3 text-sm text-red-800">{authState.errorMessage}</p>
+          <p className="mt-3 text-sm text-rose-800">{authState.errorMessage}</p>
           <button
             type="button"
             onClick={() => {
               setAuthState({ status: 'loading' });
               void verifyAuth();
             }}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand-navy px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy/90"
+            className="glass-btn-primary mt-5"
           >
             Retry Connection
           </button>
         </div>
-      </div>
+      </PageEntrance>
     );
   }
 
   if (authState.status === 'unauthorized') {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 sm:px-6">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
-          <div className="bg-brand-navy px-6 py-6 text-white">
+      <PageEntrance className="mx-auto max-w-md px-4 py-16 sm:px-6">
+        <div className="glass-panel-strong overflow-hidden">
+          <div className="border-b border-zinc-200/70 bg-white/60 px-6 py-6">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-gold/20 text-brand-gold">
-                <KeyRound className="h-6 w-6" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
+                <KeyRound className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-lg font-bold">Admin Studio Access</h1>
-                <p className="text-xs text-slate-300">
+                <h1 className="text-lg font-bold text-zinc-900">Admin Studio Access</h1>
+                <p className="text-xs text-zinc-500">
                   Enter your platform admin key to continue
                 </p>
               </div>
@@ -183,13 +183,13 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
 
           <form onSubmit={(e) => void handleUnlock(e)} className="space-y-4 p-6">
             {authState.errorMessage && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700">
+              <div className="rounded-xl border border-rose-200/80 bg-rose-50/80 px-3.5 py-2.5 text-xs font-medium text-rose-700">
                 {authState.errorMessage}
               </div>
             )}
 
             <div className="space-y-1.5">
-              <label htmlFor="admin-access-key" className="block text-sm font-semibold text-slate-800">
+              <label htmlFor="admin-access-key" className="block text-sm font-semibold text-zinc-800">
                 Admin Access Key
               </label>
               <input
@@ -200,41 +200,41 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
                 placeholder="Enter ADMIN_ACCESS_KEY..."
                 autoComplete="current-password"
                 required
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/15"
+                className="glass-input"
               />
             </div>
 
             <button
               type="submit"
               disabled={isUnlocking || !keyInput.trim()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-navy/90 disabled:opacity-60"
+              className="glass-btn-primary w-full"
             >
               {isUnlocking ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin text-brand-gold" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   <span>Verifying...</span>
                 </>
               ) : (
                 <>
-                  <Unlock className="h-4 w-4 text-brand-gold" />
+                  <Unlock className="h-4 w-4" />
                   <span>Unlock Admin Studio</span>
                 </>
               )}
             </button>
           </form>
         </div>
-      </div>
+      </PageEntrance>
     );
   }
 
   const isOpenDev = authState.mode === 'open_dev';
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] bg-slate-50">
-      {/* Admin Sub-Navigation */}
-      <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <nav className="flex flex-wrap items-center gap-1.5" aria-label="Admin navigation">
+    <div className="min-h-[calc(100vh-8rem)]">
+      {/* Floating Frosted Admin Sub-Navigation */}
+      <div className="mx-auto max-w-7xl px-4 pt-5 sm:px-6">
+        <div className="glass-panel flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+          <nav className="flex flex-wrap items-center gap-1" aria-label="Admin navigation">
             {ADMIN_NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = item.exact
@@ -242,28 +242,28 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
                 : pathname.startsWith(item.href);
 
               return (
-                <Link
+                <SlidingTabButton
                   key={item.href}
+                  layoutId="admin-nav-pill"
                   href={item.href}
-                  className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-                    isActive
-                      ? 'bg-brand-navy text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-brand-navy'
-                  }`}
+                  isActive={isActive}
+                  className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold"
+                  activeClassName="text-white"
+                  inactiveClassName="text-zinc-600 hover:text-zinc-900"
                 >
-                  <Icon className={`h-4 w-4 ${isActive ? 'text-brand-gold' : 'text-slate-400'}`} />
+                  <Icon className="h-4 w-4" />
                   <span>{item.label}</span>
-                </Link>
+                </SlidingTabButton>
               );
             })}
           </nav>
 
           <div className="flex items-center gap-2">
             <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold whitespace-nowrap ${
                 isOpenDev
-                  ? 'border border-amber-200 bg-amber-50 text-amber-800'
-                  : 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+                  ? 'border-amber-200/90 bg-amber-50/85 text-amber-800'
+                  : 'border-emerald-200/90 bg-emerald-50/85 text-emerald-800'
               }`}
             >
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -274,7 +274,7 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
               <button
                 type="button"
                 onClick={handleLock}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                className="glass-btn-secondary !rounded-xl !px-3 !py-1.5 !text-xs"
               >
                 <Lock className="h-3.5 w-3.5" />
                 Lock

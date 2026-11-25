@@ -2,11 +2,12 @@ import { jsPDF } from 'jspdf';
 import type { PersistedReport } from '@edumenai/shared';
 
 type RgbTuple = readonly [number, number, number];
+type HighlightKind = 'correction' | 'suggestion' | false;
 
 interface RichSpan {
   text: string;
   bold?: boolean;
-  highlight?: boolean;
+  highlight?: HighlightKind;
   color?: RgbTuple;
 }
 
@@ -15,7 +16,7 @@ interface RichToken {
   isSpace: boolean;
   width: number;
   bold: boolean;
-  highlight: boolean;
+  highlight: HighlightKind;
   color: RgbTuple | null;
 }
 
@@ -63,10 +64,23 @@ function countWords(str: string): number {
   return str.trim().split(/\s+/).filter(Boolean).length;
 }
 
+function classifyPdfHighlight(tagName: string, attrs: string): 'correction' | 'suggestion' {
+  const lower = tagName.toLowerCase();
+  if (lower === 'ins' || lower === 'suggest') {
+    return 'suggestion';
+  }
+  if (/class\s*=\s*["'][^"']*\b(suggestion|addition)\b[^"']*["']/i.test(attrs)) {
+    return 'suggestion';
+  }
+  return 'correction';
+}
+
 function parseMarkParagraphs(raw: string): RichSpan[][] {
   const normalized = (raw || '').replace(/\r\n/g, '\n');
-  const rawParagraphs = normalized.split(/\n{2,}|\n/).filter((p, idx, arr) => p.length > 0 || idx < arr.length - 1);
-  const tagRegex = /<mark(?:\s+[^>]*)?>([\s\S]*?)<\/mark>/gi;
+  const rawParagraphs = normalized
+    .split(/\n{2,}|\n/)
+    .filter((p, idx, arr) => p.length > 0 || idx < arr.length - 1);
+  const tagRegex = /<(mark|ins|suggest)(\s+[^>]*)?>([\s\S]*?)<\/\1>/gi;
 
   return rawParagraphs.map((para) => {
     const spans: RichSpan[] = [];
@@ -79,8 +93,12 @@ function parseMarkParagraphs(raw: string): RichSpan[][] {
         const plain = para.slice(lastIdx, match.index).replace(/<[^>]+>/g, '');
         if (plain) spans.push({ text: plain, highlight: false });
       }
-      const highlighted = (match[1] ?? '').replace(/<[^>]+>/g, '');
-      if (highlighted) spans.push({ text: highlighted, highlight: true });
+      const tagName = match[1] ?? 'mark';
+      const attrs = match[2] ?? '';
+      const highlighted = (match[3] ?? '').replace(/<[^>]+>/g, '');
+      if (highlighted) {
+        spans.push({ text: highlighted, highlight: classifyPdfHighlight(tagName, attrs) });
+      }
       lastIdx = match.index + match[0].length;
     }
 
@@ -117,7 +135,14 @@ function parseMarkdownParagraphs(text: string, boldColor: RgbTuple): RichSpan[][
   });
 }
 
-export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
+export interface GenerateReportPdfOptions {
+  includeIntegrity?: boolean;
+}
+
+export function generateReportPdf(
+  report: PersistedReport,
+  options?: GenerateReportPdfOptions
+): GeneratedPdfResult {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -137,12 +162,16 @@ export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
     dark: [33, 33, 33] as RgbTuple,
     success: [27, 122, 61] as RgbTuple,
     danger: [176, 58, 46] as RgbTuple,
+    amber: [180, 83, 9] as RgbTuple,
+    amberBg: [254, 243, 199] as RgbTuple,
     gray: [120, 120, 120] as RgbTuple,
     white: [255, 255, 255] as RgbTuple,
     lightGreen: [232, 245, 233] as RgbTuple,
-    highlightBg: [254, 240, 138] as RgbTuple, // Yellow marker #FEF08A
-    lightGrayBg: [249, 250, 251] as RgbTuple, // Card background #F9FAFB
-    borderGray: [229, 231, 235] as RgbTuple   // Card border #E5E7EB
+    highlightBg: [254, 240, 138] as RgbTuple,  // Yellow marker #FEF08A
+    suggestionBg: [186, 230, 253] as RgbTuple, // Sky blue marker #BAE6FD
+    suggestionInk: [12, 74, 110] as RgbTuple,  // Deep sky #0C4A6E
+    lightGrayBg: [249, 250, 251] as RgbTuple,  // Card background #F9FAFB
+    borderGray: [229, 231, 235] as RgbTuple    // Card border #E5E7EB
   };
 
   let y = margin.top;
@@ -226,7 +255,7 @@ export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
                 isSpace: false,
                 width: doc.getTextWidth(chunk),
                 bold: Boolean(span.bold),
-                highlight: Boolean(span.highlight),
+                highlight: span.highlight ?? false,
                 color: span.color ?? null
               });
             }
@@ -236,7 +265,7 @@ export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
               isSpace,
               width: w,
               bold: Boolean(span.bold),
-              highlight: Boolean(span.highlight),
+              highlight: span.highlight ?? false,
               color: span.color ?? null
             });
           }
@@ -283,19 +312,28 @@ export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
     let cursorX = startX;
     let runStartX: number | null = null;
     let runWidth = 0;
+    let runKind: 'correction' | 'suggestion' | null = null;
 
     const flushHighlight = (): void => {
-      if (runStartX !== null && runWidth > 0) {
-        doc.setFillColor(...colours.highlightBg);
+      if (runStartX !== null && runWidth > 0 && runKind !== null) {
+        const bg = runKind === 'suggestion' ? colours.suggestionBg : colours.highlightBg;
+        doc.setFillColor(...bg);
         doc.roundedRect(runStartX - 0.5, baselineY - 2.9, runWidth + 1.0, 4.0, 0.6, 0.6, 'F');
       }
       runStartX = null;
       runWidth = 0;
+      runKind = null;
     };
 
     for (const tok of tokens) {
       if (tok.highlight) {
-        if (runStartX === null) runStartX = cursorX;
+        if (runKind !== null && runKind !== tok.highlight) {
+          flushHighlight();
+        }
+        if (runStartX === null) {
+          runStartX = cursorX;
+          runKind = tok.highlight;
+        }
         runWidth += tok.width;
       } else {
         flushHighlight();
@@ -309,7 +347,9 @@ export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
       if (!tok.isSpace) {
         doc.setFont('helvetica', tok.bold ? 'bold' : 'normal');
         doc.setFontSize(fontSize);
-        doc.setTextColor(...(tok.color ?? defaultColor));
+        const ink =
+          tok.color ?? (tok.highlight === 'suggestion' ? colours.suggestionInk : defaultColor);
+        doc.setTextColor(...ink);
         doc.text(tok.text, cursorX, baselineY);
       }
       cursorX += tok.width;
@@ -694,13 +734,19 @@ export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
     checkPageBreak(24);
     addSectionHeader('CORRECTED VERSION (IMPROVED)', colours.primary);
 
-    // Highlighted Correction Legend
+    // Dual-Color Legend
     doc.setFillColor(...colours.highlightBg);
     doc.roundedRect(margin.left + 2, y - 1.5, 4, 3.2, 0.5, 0.5, 'F');
     doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(...colours.gray);
     doc.text('Highlighted Correction', margin.left + 8, y + 1);
-    y += 5;
+
+    doc.setFillColor(...colours.suggestionBg);
+    doc.roundedRect(margin.left + 50, y - 1.5, 4, 3.2, 0.5, 0.5, 'F');
+    doc.setTextColor(...colours.gray);
+    doc.text('Suggested Enhancement', margin.left + 56, y + 1);
+    y += 5.5;
 
     const correctedParagraphs = parseMarkParagraphs(report.correctedVersion);
     drawRichParagraphs(correctedParagraphs, {
@@ -715,6 +761,58 @@ export function generateReportPdf(report: PersistedReport): GeneratedPdfResult {
       baselineOffset: 3.3
     });
     y += 5;
+  }
+
+  // --- EXAM INTEGRITY AUDIT (ADMIN / INSTRUCTOR ONLY) ---
+  if (options?.includeIntegrity === true && report.integrityLog) {
+    const log = report.integrityLog;
+    const totalFlags =
+      log.totalViolations ||
+      log.tabSwitchCount +
+        log.windowBlurCount +
+        log.pasteBlockedCount +
+        log.copyBlockedCount +
+        log.rightClickBlockedCount;
+    const isClean = totalFlags === 0;
+
+    checkPageBreak(30);
+    addSectionHeader('EXAM INTEGRITY AUDIT (STAFF ONLY)', colours.primary);
+
+    const cardBg = isClean ? colours.lightGreen : colours.amberBg;
+    const cardInk = isClean ? colours.success : colours.amber;
+    doc.setFillColor(...cardBg);
+    doc.setDrawColor(...colours.borderGray);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(margin.left, y, contentWidth, 21, 2, 2, 'FD');
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...cardInk);
+    doc.text(
+      isClean
+        ? 'Status: Clean Session (0 Integrity Events Recorded)'
+        : `Status: ${totalFlags} Integrity Event${totalFlags === 1 ? '' : 's'} Flagged`,
+      margin.left + 4,
+      y + 5.5
+    );
+
+    doc.setFontSize(7.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...colours.dark);
+    doc.text(
+      `Tab Switches: ${log.tabSwitchCount}   |   Window Blurs: ${log.windowBlurCount}   |   Paste Blocked: ${log.pasteBlockedCount}   |   Copy Blocked: ${log.copyBlockedCount}   |   Right-Click Blocked: ${log.rightClickBlockedCount}`,
+      margin.left + 4,
+      y + 11.5
+    );
+
+    doc.setFontSize(7);
+    doc.setTextColor(...colours.gray);
+    doc.text(
+      'Note: Client-side browser telemetry captured during assessment; review in context alongside student work.',
+      margin.left + 4,
+      y + 17.5
+    );
+    y += 26;
   }
 
   // --- PAGE NUMBERS FOOTER (Page X of Y) ---

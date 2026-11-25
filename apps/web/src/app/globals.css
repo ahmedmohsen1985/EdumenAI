@@ -114,6 +114,15 @@ mark.addition {
   border-radius: 2px;
 }
 
+mark.suggestion,
+ins.suggestion {
+  background-color: #bae6fd;
+  color: #0c4a6e;
+  padding: 0 2px;
+  border-radius: 2px;
+  text-decoration: none;
+}
+
 @media print {
   body {
     background: #ffffff !important;
@@ -142,5 +151,13 @@ mark.addition {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
     background-color: #fef08a !important;
+  }
+
+  mark.suggestion,
+  ins.suggestion {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-color: #bae6fd !important;
+    color: #0c4a6e !important;
   }
 }

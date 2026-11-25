@@ -88,6 +88,7 @@ export interface AdminExerciseSummary {
   title: string;
   description: string | null;
   totalMarks: number;
+  integrityEnabled: boolean;
   versionCount: number;
   activeVersion: {
     id: string;
@@ -125,6 +126,7 @@ export interface AdminExerciseDetail {
   title: string;
   description: string | null;
   totalMarks: number;
+  integrityEnabled: boolean;
   createdAt: string;
   updatedAt: string;
   versions: AdminPromptVersionView[];
@@ -144,7 +146,8 @@ export const CreateExerciseAdminSchema = z.object({
   skill: ExerciseSkillSchema.default('WRITING'),
   title: z.string().min(1).max(200),
   description: z.string().max(2000).nullable().optional(),
-  totalMarks: z.number().int().positive().max(500).default(23)
+  totalMarks: z.number().int().positive().max(500).default(23),
+  integrityEnabled: z.boolean().default(true)
 });
 
 export type CreateExerciseAdminInput = z.infer<typeof CreateExerciseAdminSchema>;
@@ -154,6 +157,7 @@ export const SaveExerciseDraftAdminSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   skill: ExerciseSkillSchema.optional(),
   totalMarks: z.number().int().positive().max(500).optional(),
+  integrityEnabled: z.boolean().optional(),
   templateSchema: TemplateSchema.optional(),
   promptEntries: z.array(PromptEntrySchema).optional(),
   markingSchema: z.record(z.unknown()).optional()
@@ -561,6 +565,7 @@ function mapAdminExerciseSummary(ex: ExerciseSummaryRow): AdminExerciseSummary {
     title: ex.title,
     description: ex.description,
     totalMarks: ex.totalMarks,
+    integrityEnabled: ex.integrityEnabled,
     versionCount: ex.promptVersions.length,
     activeVersion: active
       ? {
@@ -591,6 +596,7 @@ function mapAdminExerciseDetail(ex: ExerciseWithOwnerAndVersions): AdminExercise
     title: ex.title,
     description: ex.description,
     totalMarks: ex.totalMarks,
+    integrityEnabled: ex.integrityEnabled,
     createdAt: ex.createdAt.toISOString(),
     updatedAt: ex.updatedAt.toISOString(),
     versions: ex.promptVersions.map((v) => mapAdminVersion(v))
@@ -657,7 +663,8 @@ async function createExerciseCore(
         skill: input.skill,
         title: input.title,
         description: input.description ?? null,
-        totalMarks: input.totalMarks
+        totalMarks: input.totalMarks,
+        integrityEnabled: input.integrityEnabled
       },
       include: {
         owner: { select: OWNER_SELECT }
@@ -752,7 +759,8 @@ async function saveExerciseDraftCore(
       input.title !== undefined ||
       input.description !== undefined ||
       input.skill !== undefined ||
-      input.totalMarks !== undefined
+      input.totalMarks !== undefined ||
+      input.integrityEnabled !== undefined
     ) {
       exercise = await tx.exercise.update({
         where: { id: exercise.id },
@@ -760,7 +768,10 @@ async function saveExerciseDraftCore(
           ...(input.title !== undefined ? { title: input.title } : {}),
           ...(input.description !== undefined ? { description: input.description } : {}),
           ...(input.skill !== undefined ? { skill: input.skill } : {}),
-          ...(input.totalMarks !== undefined ? { totalMarks: input.totalMarks } : {})
+          ...(input.totalMarks !== undefined ? { totalMarks: input.totalMarks } : {}),
+          ...(input.integrityEnabled !== undefined
+            ? { integrityEnabled: input.integrityEnabled }
+            : {})
         },
         include: {
           promptVersions: {
@@ -1046,7 +1057,8 @@ async function duplicateExerciseCore(
         skill: source.skill,
         title: title.trim(),
         description: source.description,
-        totalMarks: source.totalMarks
+        totalMarks: source.totalMarks,
+        integrityEnabled: source.integrityEnabled
       },
       include: {
         owner: { select: OWNER_SELECT }

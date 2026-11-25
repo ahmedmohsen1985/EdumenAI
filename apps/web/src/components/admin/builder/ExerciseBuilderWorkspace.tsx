@@ -39,6 +39,7 @@ import {
   RefreshCw,
   Rocket,
   Save,
+  ShieldCheck,
   SlidersHorizontal
 } from 'lucide-react';
 import {
@@ -144,6 +145,7 @@ export function ExerciseBuilderWorkspace({
   const [skill, setSkill] = useState<ExerciseSkill>('WRITING');
   const [description, setDescription] = useState<string>('');
   const [totalMarks, setTotalMarks] = useState<number>(23);
+  const [integrityEnabled, setIntegrityEnabled] = useState<boolean>(true);
   const [templateSchema, setTemplateSchema] = useState<TemplateConfig>({
     schemaVersion: 1,
     settings: {
@@ -200,6 +202,7 @@ export function ExerciseBuilderWorkspace({
       setSkill(detail.skill);
       setDescription(detail.description ?? '');
       setTotalMarks(detail.totalMarks);
+      setIntegrityEnabled(detail.integrityEnabled ?? true);
 
       const chosen =
         preferredVersion ??
@@ -320,6 +323,7 @@ export function ExerciseBuilderWorkspace({
         skill,
         description: description.trim() || null,
         totalMarks,
+        integrityEnabled,
         templateSchema: {
           ...templateSchema,
           blocks: reindexBlocks(templateSchema.blocks)
@@ -673,6 +677,34 @@ export function ExerciseBuilderWorkspace({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={integrityEnabled}
+              onClick={() => {
+                setIntegrityEnabled((prev) => !prev);
+                setIsDirty(true);
+              }}
+              title="Block copy/paste/right-click and record tab switches during student assessments"
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-semibold transition-all duration-200 ${
+                integrityEnabled
+                  ? 'border-emerald-200/90 bg-emerald-50/85 text-emerald-800 shadow-sm hover:bg-emerald-100/80'
+                  : 'glass-btn-secondary !px-3 !py-2 !text-xs text-zinc-500'
+              }`}
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>Exam Integrity Protection</span>
+              <span
+                className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                  integrityEnabled
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-zinc-200/80 text-zinc-600'
+                }`}
+              >
+                {integrityEnabled ? 'On' : 'Off'}
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowMetaDrawer((prev) => !prev)}

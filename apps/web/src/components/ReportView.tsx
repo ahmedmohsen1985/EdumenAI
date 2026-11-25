@@ -2,19 +2,24 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { PersistedReport } from '@edumenai/shared';
+import { useRouter } from 'next/navigation';
+import type { IntegrityEventType, PersistedReport } from '@edumenai/shared';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
   Download,
   Loader2,
   Printer,
-  Send
+  Send,
+  ShieldCheck,
+  Trash2
 } from 'lucide-react';
 import {
+  deleteReport,
   fetchReportById,
   sendReportToTelegram,
   type TelegramDispatchResult
@@ -72,7 +77,25 @@ function buildDispatchStatus(
   };
 }
 
+function formatIntegrityEventLabel(type: IntegrityEventType): string {
+  switch (type) {
+    case 'tab_switch':
+      return 'Tab Switched';
+    case 'window_blur':
+      return 'Window Blur';
+    case 'paste_blocked':
+      return 'Paste Blocked';
+    case 'copy_blocked':
+      return 'Copy Blocked';
+    case 'cut_blocked':
+      return 'Cut Blocked';
+    case 'right_click_blocked':
+      return 'Right-Click Blocked';
+  }
+}
+
 export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
+  const router = useRouter();
   const { user } = useAuth();
   const [report, setReport] = useState<PersistedReport | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -83,6 +106,19 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
     message: string;
   } | null>(null);
   const [showAuditText, setShowAuditText] = useState<boolean>(false);
+  const [showIntegrityEvents, setShowIntegrityEvents] = useState<boolean>(false);
+  const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const isStaff = user?.role === 'ADMIN' || user?.role === 'INSTRUCTOR';
+  const canDelete = Boolean(
+    report &&
+      (user?.role === 'ADMIN' ||
+        (user?.role === 'INSTRUCTOR' &&
+          Boolean(report.exerciseOwnerId) &&
+          report.exerciseOwnerId === user.id))
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -160,8 +196,21 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
 
   const handleDownloadPdf = (): void => {
     if (!report) return;
-    const { doc, fileName } = generateReportPdf(report);
+    const { doc, fileName } = generateReportPdf(report, { includeIntegrity: isStaff });
     doc.save(fileName);
+  };
+
+  const handleDeleteReport = async (): Promise<void> => {
+    if (!report) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteReport(report.id);
+      router.push(user?.role === 'INSTRUCTOR' ? '/instructor/submissions' : '/reports');
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete report.');
+      setIsDeleting(false);
+    }
   };
 
   const handlePrint = (): void => {
@@ -296,8 +345,51 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
             )}
             Send to Telegram Bot
           </button>
+
+          {canDelete &&
+            (confirmDelete ? (
+              <div className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200/80 bg-rose-50/90 px-2.5 py-1.5 text-xs text-rose-900 backdrop-blur-md">
+                <span className="font-semibold">Delete?</span>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => void handleDeleteReport()}
+                  className="rounded-lg bg-rose-600 px-2.5 py-1 font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {isDeleting ? 'Deleting...' : 'Confirm'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded-lg bg-white/85 px-2.5 py-1 font-semibold text-zinc-700 hover:bg-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                aria-label="Delete report"
+                title="Delete report"
+                className="glass-btn-secondary !p-2.5 text-rose-700 hover:!border-rose-200 hover:!bg-rose-50/90"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ))}
         </div>
       </div>
+
+      {deleteError && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-xl border border-rose-200/80 bg-rose-50/85 px-4 py-3 text-sm text-rose-800 backdrop-blur-md print:hidden"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{deleteError}</span>
+        </div>
+      )}
 
       {/* Telegram Status Banner */}
       {isSendingTelegram && !telegramStatus && (
@@ -460,15 +552,151 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
       <section className="glass-panel p-6">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-900/[0.06] pb-3">
           <h2 className="text-base font-bold text-zinc-950">Corrected Version (Improved)</h2>
-          <div className="flex items-center gap-2 text-xs text-zinc-600">
-            <mark className="correction px-1.5 py-0.5 font-medium">Sample</mark>
-            <span>Highlighted Correction</span>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-600">
+            <span className="inline-flex items-center gap-1.5">
+              <mark className="correction px-1.5 py-0.5 font-medium">Sample</mark>
+              <span>Highlighted Correction</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <ins className="suggestion px-1.5 py-0.5 font-medium">Sample</ins>
+              <span>Suggested Enhancement</span>
+            </span>
           </div>
         </div>
         <div className="mt-4 rounded-xl border border-zinc-900/[0.06] bg-white/70 p-4 shadow-[inset_0_1px_2px_rgba(15,17,21,0.04)]">
           <HighlightedText html={report.correctedVersion} />
         </div>
       </section>
+
+      {/* Modular Exam Integrity Audit Card (ADMIN / INSTRUCTOR ONLY — NEVER shown to Students) */}
+      {isStaff && report.integrityLog && (() => {
+        const log = report.integrityLog;
+        const totalFlags =
+          log.totalViolations ||
+          log.tabSwitchCount +
+            log.windowBlurCount +
+            log.pasteBlockedCount +
+            log.copyBlockedCount +
+            log.rightClickBlockedCount;
+        const isClean = totalFlags === 0;
+
+        return (
+          <section
+            aria-label="Exam Integrity Audit"
+            className="glass-panel overflow-hidden p-6 print:hidden"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-900/[0.06] pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-base font-bold text-zinc-950">Exam Integrity Audit</h2>
+                  <p className="text-xs text-zinc-500">
+                    Staff-only client-side browser telemetry (hidden from students)
+                  </p>
+                </div>
+              </div>
+
+              <span
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold ${
+                  isClean
+                    ? 'border-emerald-200 bg-emerald-50/85 text-emerald-700'
+                    : 'border-amber-300/80 bg-amber-50/90 text-amber-900'
+                }`}
+              >
+                {isClean ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                ) : (
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                )}
+                {isClean
+                  ? 'Clean Session'
+                  : `${totalFlags} Integrity Flag${totalFlags === 1 ? '' : 's'}`}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {[
+                { label: 'Tab Switches', count: log.tabSwitchCount },
+                { label: 'Window Blurs', count: log.windowBlurCount },
+                { label: 'Paste Blocked', count: log.pasteBlockedCount },
+                { label: 'Copy Blocked', count: log.copyBlockedCount },
+                { label: 'Right-Click Blocked', count: log.rightClickBlockedCount }
+              ].map((metric) => (
+                <div
+                  key={metric.label}
+                  className={`rounded-xl border px-3.5 py-2.5 ${
+                    metric.count > 0
+                      ? 'border-amber-200/80 bg-amber-50/60'
+                      : 'border-white/80 bg-white/60 ring-1 ring-zinc-900/[0.04]'
+                  }`}
+                >
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                    {metric.label}
+                  </div>
+                  <div
+                    className={`mt-1 text-xl font-extrabold tabular-nums ${
+                      metric.count > 0 ? 'text-amber-900' : 'text-zinc-900'
+                    }`}
+                  >
+                    {metric.count}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {log.events.length > 0 && (
+              <div className="mt-4 border-t border-zinc-900/[0.06] pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowIntegrityEvents((prev) => !prev)}
+                  aria-expanded={showIntegrityEvents}
+                  className="flex w-full items-center justify-between text-xs font-semibold text-zinc-700 hover:text-zinc-950"
+                >
+                  <span>Timestamped Telemetry Log ({log.events.length} event{log.events.length === 1 ? '' : 's'})</span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-zinc-500 transition-transform duration-200 ${
+                      showIntegrityEvents ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {showIntegrityEvents && (
+                    <motion.ul
+                      key="integrity-events"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={SPRING_GENTLE}
+                      className="mt-3 max-h-56 divide-y divide-zinc-900/[0.05] overflow-y-auto rounded-xl border border-zinc-900/[0.06] bg-white/70 text-xs"
+                    >
+                      {log.events.map((ev, idx) => (
+                        <li key={idx} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="shrink-0 whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                              {formatIntegrityEventLabel(ev.type)}
+                            </span>
+                            {ev.detail && <span className="text-zinc-600">{ev.detail}</span>}
+                          </div>
+                          <span className="font-mono text-[11px] text-zinc-400">
+                            {new Date(ev.timestamp).toLocaleTimeString('en-GB', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })}
+                          </span>
+                        </li>
+                      ))}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {/* Collapsible Audit Accordion */}
       <section className="glass-panel overflow-hidden">

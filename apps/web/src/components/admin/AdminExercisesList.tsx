@@ -413,10 +413,10 @@ export function AdminExercisesList(): React.ReactElement {
                       type="button"
                       onClick={() => openDuplicateModal(ex)}
                       title="Duplicate Exercise"
-                      className="glass-btn-secondary !px-3 !py-2"
+                      aria-label={`Duplicate ${ex.title}`}
+                      className="glass-btn-secondary !p-2"
                     >
-                      <Copy className="h-3.5 w-3.5" />
-                      <span>Duplicate</span>
+                      <Copy className="h-4 w-4" />
                     </button>
 
                     <button
@@ -426,10 +426,10 @@ export function AdminExercisesList(): React.ReactElement {
                         setConfirmDeleteCode(ex.code);
                       }}
                       title="Delete Exercise"
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200/90 bg-rose-50/75 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100/80"
+                      aria-label={`Delete ${ex.title}`}
+                      className="glass-btn-secondary !p-2 text-rose-700 hover:!border-rose-200 hover:!bg-rose-50/90"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      <span>Delete</span>
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
 

@@ -4,8 +4,11 @@ import type {
   AiTaskRouteView,
   AiTaskType,
   CreateTelegramTarget,
+  PlatformBillingConfigView,
   TelegramConfigView,
   TelegramTargetView,
+  TokenMetricsResponse,
+  UpdateBillingConfig,
   UpdateTelegramTarget,
   UpsertAiProviderConfig,
   UpsertAiTaskRoute,
@@ -16,7 +19,9 @@ import { fetchWithCache, invalidateCache } from './client-cache';
 
 export const ADMIN_SETTINGS_CACHE_KEYS = {
   ai: 'admin:ai',
-  telegram: 'admin:telegram'
+  telegram: 'admin:telegram',
+  billing: 'admin:billing',
+  tokenMetrics: (days: number) => `admin:metrics:tokens:${days}`
 } as const;
 
 export interface AiSettingsData {
@@ -203,4 +208,50 @@ export async function sendTelegramTest(input: {
     }
   );
   return res.data;
+}
+
+
+export async function fetchBillingConfig(options?: {
+  force?: boolean;
+}): Promise<PlatformBillingConfigView> {
+  return fetchWithCache(
+    ADMIN_SETTINGS_CACHE_KEYS.billing,
+    async () => {
+      const res = await adminFetch<{ success: true; data: PlatformBillingConfigView }>(
+        '/api/admin/settings/billing'
+      );
+      return res.data;
+    },
+    { ttlMs: 30_000, force: options?.force }
+  );
+}
+
+export async function updateBillingConfig(
+  input: UpdateBillingConfig
+): Promise<PlatformBillingConfigView> {
+  const res = await adminFetch<{ success: true; data: PlatformBillingConfigView }>(
+    '/api/admin/settings/billing',
+    {
+      method: 'PUT',
+      body: JSON.stringify(input)
+    }
+  );
+  invalidateCache('admin:billing');
+  return res.data;
+}
+
+export async function fetchTokenMetrics(
+  days = 30,
+  options?: { force?: boolean }
+): Promise<TokenMetricsResponse> {
+  return fetchWithCache(
+    ADMIN_SETTINGS_CACHE_KEYS.tokenMetrics(days),
+    async () => {
+      const res = await adminFetch<{ success: true; data: TokenMetricsResponse }>(
+        `/api/admin/metrics/tokens?days=${encodeURIComponent(String(days))}`
+      );
+      return res.data;
+    },
+    { ttlMs: 30_000, force: options?.force }
+  );
 }

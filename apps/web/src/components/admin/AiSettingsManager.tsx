@@ -36,6 +36,7 @@ import {
 } from '../../lib/admin-settings-api';
 import { getCached, isCacheFresh } from '../../lib/client-cache';
 import { PageEntrance } from '../ui/MotionPrimitives';
+import { TokenMetricsAndBilling } from './TokenMetricsAndBilling';
 
 interface ProviderMeta {
   id: AiProviderId;
@@ -1044,6 +1045,8 @@ export function AiSettingsManager(): React.ReactElement {
               })}
             </div>
           </section>
+
+          <TokenMetricsAndBilling />
         </>
       )}
     </PageEntrance>

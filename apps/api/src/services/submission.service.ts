@@ -1,12 +1,15 @@
 import { Prisma, type User } from '@prisma/client';
-import type {
-  ErrorItem,
-  Justification,
-  MarkingReport,
-  PersistedReport,
-  StudentInfo,
-  TranscriptionMeta
+import {
+  IntegrityLogSchema,
+  type ErrorItem,
+  type IntegrityLog,
+  type Justification,
+  type MarkingReport,
+  type PersistedReport,
+  type StudentInfo,
+  type TranscriptionMeta
 } from '@edumenai/shared';
+import { appCache } from '../lib/cache.js';
 import { prisma, TX_OPTIONS } from '../lib/prisma.js';
 import { HttpError } from './exercise.service.js';
 
@@ -36,6 +39,7 @@ export interface CreateEvaluatedSubmissionParams {
   transcriptionMeta?: TranscriptionMeta;
   isPreview?: boolean;
   formData?: Record<string, unknown>;
+  integrityLog?: IntegrityLog;
   evaluationResult: PipelineEvaluationResult;
 }
 
@@ -108,7 +112,10 @@ type ReportWithRelations = Prisma.EvaluationReportGetPayload<{
   include: typeof REPORT_INCLUDE;
 }>;
 
-function mapReportToPersisted(record: ReportWithRelations): PersistedReport {
+function mapReportToPersisted(
+  record: ReportWithRelations,
+  options?: { includeIntegrity?: boolean }
+): PersistedReport {
   const { submission } = record;
   const transcriptionMeta =
     submission.transcriptionMeta &&
@@ -123,6 +130,14 @@ function mapReportToPersisted(record: ReportWithRelations): PersistedReport {
     !Array.isArray(submission.formData)
       ? (submission.formData as Record<string, unknown>)
       : null;
+
+  let integrityLog: IntegrityLog | null = null;
+  if (options?.includeIntegrity === true && submission.integrityLog != null) {
+    const parsedIntegrity = IntegrityLogSchema.safeParse(submission.integrityLog);
+    if (parsedIntegrity.success) {
+      integrityLog = parsedIntegrity.data;
+    }
+  }
 
   return {
     id: record.id,
@@ -143,6 +158,7 @@ function mapReportToPersisted(record: ReportWithRelations): PersistedReport {
     transcriptionMeta,
     isPreview: submission.isPreview,
     formData,
+    integrityLog,
     marks: {
       content: record.marksContent,
       content_max: record.marksContentMax,
@@ -193,6 +209,9 @@ export async function createEvaluatedSubmission(
         ...(params.formData !== undefined
           ? { formData: params.formData as unknown as Prisma.InputJsonValue }
           : {}),
+        ...(params.integrityLog !== undefined
+          ? { integrityLog: params.integrityLog as unknown as Prisma.InputJsonValue }
+          : {}),
         status: 'COMPLETED'
       }
     });
@@ -222,6 +241,8 @@ export async function createEvaluatedSubmission(
 
     return evaluationReport;
   }, TX_OPTIONS);
+
+  appCache.delPrefix('metrics:');
 
   return {
     submissionId: created.submissionId,
@@ -310,8 +331,12 @@ export async function listReports(params: ListReportsParams = {}): Promise<ListR
     prisma.evaluationReport.count({ where })
   ]);
 
+  const includeIntegrity = Boolean(
+    isAdminOverride || viewerUser?.role === 'ADMIN' || viewerUser?.role === 'INSTRUCTOR'
+  );
+
   return {
-    items: rows.map(mapReportToPersisted),
+    items: rows.map((row) => mapReportToPersisted(row, { includeIntegrity })),
     total
   };
 }
@@ -351,8 +376,12 @@ export async function getReportAccessContext(
     }
   }
 
+  const includeIntegrity = Boolean(
+    isAdminOverride || viewerUser?.role === 'ADMIN' || viewerUser?.role === 'INSTRUCTOR'
+  );
+
   return {
-    report: mapReportToPersisted(record),
+    report: mapReportToPersisted(record, { includeIntegrity }),
     studentTelegramId: record.submission.student?.telegramId ?? null,
     parentTelegramId: record.submission.student?.parentTelegramId ?? null,
     submissionInstructorId: record.submission.instructorId,
@@ -364,6 +393,70 @@ export async function getReportAccessContext(
 export async function getReportById(id: string): Promise<PersistedReport> {
   const ctx = await getReportAccessContext(id, null, true);
   return ctx.report;
+}
+
+export async function deleteReportById(
+  id: string,
+  viewerUser?: User | null,
+  isAdminOverride = false
+): Promise<{ deleted: true; id: string; submissionId: string }> {
+  if (!viewerUser && !isAdminOverride) {
+    throw new HttpError(401, 'Authentication required to delete evaluation reports.', 'AUTH_REQUIRED');
+  }
+
+  const record = await prisma.evaluationReport.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      submission: {
+        select: {
+          id: true,
+          exercise: {
+            select: {
+              ownerId: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  if (!record) {
+    throw new HttpError(404, `Evaluation report "${id}" not found.`, 'REPORT_NOT_FOUND');
+  }
+
+  if (!isAdminOverride && viewerUser?.role !== 'ADMIN') {
+    if (viewerUser?.role === 'INSTRUCTOR') {
+      if (
+        viewerUser.accountStatus !== 'ACTIVE' ||
+        record.submission.exercise.ownerId !== viewerUser.id
+      ) {
+        throw new HttpError(
+          403,
+          'Instructors can only delete reports belonging to their own custom exercises.',
+          'FORBIDDEN'
+        );
+      }
+    } else {
+      throw new HttpError(
+        403,
+        'You do not have permission to delete evaluation reports.',
+        'FORBIDDEN'
+      );
+    }
+  }
+
+  await prisma.submission.delete({
+    where: { id: record.submission.id }
+  });
+
+  appCache.delPrefix('metrics:');
+
+  return {
+    deleted: true,
+    id: record.id,
+    submissionId: record.submission.id
+  };
 }
 
 export async function getInstructorOverviewStats(
@@ -419,6 +512,8 @@ export async function getInstructorOverviewStats(
     myExercisesCount,
     publishedExercisesCount,
     totalSubmissionsCount,
-    recentSubmissions: recentRows.map(mapReportToPersisted)
+    recentSubmissions: recentRows.map((row) =>
+      mapReportToPersisted(row, { includeIntegrity: true })
+    )
   };
 }

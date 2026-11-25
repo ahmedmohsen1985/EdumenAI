@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IntegrityLogSchema } from './credits.schema.js';
 import { MarkingReportSchema } from './marking-report.schema.js';
 import { TranscriptionSchema } from './transcription.schema.js';
 
@@ -45,7 +46,8 @@ export const EvaluateRequestSchema = z.object({
   formData: z.record(z.unknown()).optional(),
   promptKeys: z.array(z.string()).optional(),
   telegramTargetIds: z.array(z.string()).optional(),
-  instructorId: z.string().min(1).nullable().optional()
+  instructorId: z.string().min(1).nullable().optional(),
+  integrityLog: IntegrityLogSchema.optional()
 });
 
 export const EvaluateResponseSchema = z.object({
@@ -90,6 +92,7 @@ export const PersistedReportSchema = z.object({
   transcriptionMeta: z.record(z.unknown()).nullable(),
   isPreview: z.boolean().optional(),
   formData: z.record(z.unknown()).nullable().optional(),
+  integrityLog: IntegrityLogSchema.nullable().optional(),
   marks: MarkingReportSchema.shape.marks,
   justification: MarkingReportSchema.shape.justification,
   errors: MarkingReportSchema.shape.errors,

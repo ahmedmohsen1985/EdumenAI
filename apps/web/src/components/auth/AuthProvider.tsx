@@ -23,6 +23,9 @@ export interface AuthContextValue {
   approvedInstructors: PublicInstructorView[];
   pendingInstructorCount: number;
   unreadNotificationCount: number;
+  lowCreditThreshold: number;
+  enforceCredits: boolean;
+  isLowCredit: boolean;
   isLoading: boolean;
   /** Re-fetch `/api/auth/me`. Resolves with the fresh user (or null). */
   refreshAuth: () => Promise<AuthUserView | null>;
@@ -39,7 +42,10 @@ const EMPTY_SESSION: AuthSessionPayload = {
   user: null,
   approvedInstructors: [],
   pendingInstructorCount: 0,
-  unreadNotificationCount: 0
+  unreadNotificationCount: 0,
+  lowCreditThreshold: 10,
+  enforceCredits: false,
+  isLowCredit: false
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -107,6 +113,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       approvedInstructors: session.approvedInstructors,
       pendingInstructorCount: session.pendingInstructorCount,
       unreadNotificationCount: session.unreadNotificationCount,
+      lowCreditThreshold: session.lowCreditThreshold,
+      enforceCredits: session.enforceCredits,
+      isLowCredit: session.isLowCredit,
       isLoading,
       refreshAuth,
       login,

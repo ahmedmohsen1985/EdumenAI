@@ -1,10 +1,13 @@
 ﻿import type {
+  AdminAdjustCredits,
   AdminUserView,
   AiTaskType,
   AuthUserView,
   ChangePasswordRequest,
   CreateUserAdminRequest,
+  CreditTransactionView,
   EnrollmentView,
+  MyCreditsPayload,
   NotificationView,
   PublicInstructorView,
   RegisterRequest,
@@ -387,6 +390,9 @@ export interface AuthSessionPayload {
   approvedInstructors: PublicInstructorView[];
   pendingInstructorCount: number;
   unreadNotificationCount: number;
+  lowCreditThreshold: number;
+  enforceCredits: boolean;
+  isLowCredit: boolean;
 }
 
 export interface NotificationsPayload {
@@ -414,7 +420,10 @@ export async function fetchAuthSession(): Promise<AuthSessionPayload> {
     user: data.user ?? null,
     approvedInstructors: data.approvedInstructors ?? [],
     pendingInstructorCount: data.pendingInstructorCount ?? 0,
-    unreadNotificationCount: data.unreadNotificationCount ?? 0
+    unreadNotificationCount: data.unreadNotificationCount ?? 0,
+    lowCreditThreshold: data.lowCreditThreshold ?? 10,
+    enforceCredits: Boolean(data.enforceCredits),
+    isLowCredit: Boolean(data.isLowCredit)
   };
 }
 
@@ -607,4 +616,43 @@ export async function deleteAdminUser(id: string): Promise<void> {
     headers: adminHeaders()
   });
   invalidatePublishedExerciseCache();
+}
+
+
+export async function deleteReport(
+  id: string
+): Promise<{ deleted: boolean; id: string; submissionId: string }> {
+  const res = await apiFetch<unknown>(`/api/reports/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: adminHeaders()
+  });
+  invalidateCache('admin:metrics');
+  invalidateCache('inst:overview');
+  return unwrapData<{ deleted: boolean; id: string; submissionId: string }>(res);
+}
+
+export async function fetchMyCredits(limit = 30): Promise<MyCreditsPayload> {
+  const qs = limit ? `?limit=${encodeURIComponent(String(limit))}` : '';
+  const res = await apiFetch<unknown>(`/api/credits/my${qs}`);
+  return unwrapData<MyCreditsPayload>(res);
+}
+
+export async function adjustAdminUserCredits(
+  userId: string,
+  input: AdminAdjustCredits
+): Promise<{ userId: string; creditBalance: number; transaction: CreditTransactionView }> {
+  const res = await apiFetch<unknown>(
+    `/api/admin/users/${encodeURIComponent(userId)}/credits`,
+    {
+      method: 'POST',
+      headers: adminHeaders(),
+      body: JSON.stringify(input)
+    }
+  );
+  invalidateCache('admin:metrics');
+  return unwrapData<{
+    userId: string;
+    creditBalance: number;
+    transaction: CreditTransactionView;
+  }>(res);
 }

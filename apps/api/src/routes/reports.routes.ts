@@ -3,7 +3,11 @@ import { Router, type NextFunction, type Request, type RequestHandler, type Resp
 import type { User } from '@prisma/client';
 import multer from 'multer';
 import type { MarkingReport } from '@edumenai/shared';
-import { getReportAccessContext, listReports } from '../services/submission.service.js';
+import {
+  deleteReportById,
+  getReportAccessContext,
+  listReports
+} from '../services/submission.service.js';
 import { dispatchFullReportWithPdf, type TelegramStudentInfo } from '../services/telegram.service.js';
 import { isExplicitAdminAuthorized } from '../middleware/admin-auth.middleware.js';
 
@@ -193,5 +197,22 @@ router.post(
     }
   }
 );
+
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const authUser = res.locals.authUser as User | undefined;
+    const data = await deleteReportById(
+      String(req.params.id || ''),
+      authUser,
+      isExplicitAdminAuthorized(req, res)
+    );
+    res.json({
+      success: true,
+      data
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -11,18 +11,26 @@ import {
   type BlockOcrHandler,
   type BlockRuntimeContext
 } from '@edumenai/blocks';
-import type { TemplateBlock, TemplateConfig, TranscriptionMeta } from '@edumenai/shared';
+import type {
+  IntegrityEventType,
+  IntegrityLog,
+  TemplateBlock,
+  TemplateConfig,
+  TranscriptionMeta
+} from '@edumenai/shared';
 import {
   AlertTriangle,
   ArrowLeft,
   Building2,
   CheckCircle2,
+  Coins,
   GraduationCap,
   Loader2,
   Lock,
   LogIn,
   MessageSquare,
   Pencil,
+  ShieldCheck,
   UserCheck,
   UserPlus,
   Users
@@ -79,7 +87,14 @@ function isTranscriptionMeta(value: unknown): value is TranscriptionMeta {
 
 export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElement {
   const router = useRouter();
-  const { user, approvedInstructors, isLoading: authLoading } = useAuth();
+  const {
+    user,
+    approvedInstructors,
+    isLoading: authLoading,
+    isLowCredit,
+    lowCreditThreshold,
+    refreshAuth
+  } = useAuth();
 
   const initialExercise = getCached<PublishedExerciseDetail>(
     PUBLIC_CACHE_KEYS.publishedExercise(code)
@@ -97,6 +112,98 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
   );
   const [selectedInstructorId, setSelectedInstructorId] = useState<string | null>(null);
   const [targetInitialized, setTargetInitialized] = useState<boolean>(false);
+  const [integrityToast, setIntegrityToast] = useState<string | null>(null);
+
+  const isIntegrityActive = Boolean(user && exercise && exercise.integrityEnabled !== false);
+  const integrityRef = useRef<IntegrityLog>({
+    enabled: true,
+    tabSwitchCount: 0,
+    windowBlurCount: 0,
+    pasteBlockedCount: 0,
+    copyBlockedCount: 0,
+    rightClickBlockedCount: 0,
+    totalViolations: 0,
+    events: []
+  });
+  const lastFocusLossMsRef = useRef<number>(0);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showIntegrityNotice = useCallback((message: string) => {
+    setIntegrityToast(message);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setIntegrityToast(null);
+    }, 4000);
+  }, []);
+
+  const recordIntegrityEvent = useCallback(
+    (type: IntegrityEventType, detail?: string, notice?: string) => {
+      const log = integrityRef.current;
+      if (type === 'tab_switch') log.tabSwitchCount += 1;
+      else if (type === 'window_blur') log.windowBlurCount += 1;
+      else if (type === 'paste_blocked') log.pasteBlockedCount += 1;
+      else if (type === 'copy_blocked' || type === 'cut_blocked') log.copyBlockedCount += 1;
+      else if (type === 'right_click_blocked') log.rightClickBlockedCount += 1;
+
+      log.totalViolations =
+        log.tabSwitchCount +
+        log.windowBlurCount +
+        log.pasteBlockedCount +
+        log.copyBlockedCount +
+        log.rightClickBlockedCount;
+
+      if (log.events.length < 100) {
+        log.events.push({
+          type,
+          timestamp: new Date().toISOString(),
+          ...(detail ? { detail: detail.slice(0, 200) } : {})
+        });
+      }
+
+      if (notice) {
+        showIntegrityNotice(notice);
+      }
+    },
+    [showIntegrityNotice]
+  );
+
+  // Client-side Exam Integrity listeners (debounced visibilitychange + window blur)
+  useEffect(() => {
+    if (!isIntegrityActive) return undefined;
+
+    const handleVisibilityChange = (): void => {
+      if (document.hidden) {
+        const now = Date.now();
+        if (now - lastFocusLossMsRef.current < 400) return;
+        lastFocusLossMsRef.current = now;
+        recordIntegrityEvent(
+          'tab_switch',
+          'Browser tab became hidden',
+          'Tab switch recorded by Exam Integrity Protection.'
+        );
+      }
+    };
+
+    const handleWindowBlur = (): void => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastFocusLossMsRef.current < 400) return;
+      lastFocusLossMsRef.current = now;
+      recordIntegrityEvent(
+        'window_blur',
+        'Browser window lost focus',
+        'Window focus loss recorded by Exam Integrity Protection.'
+      );
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, [isIntegrityActive, recordIntegrityEvent]);
 
   // Sync default submission target when approved instructors arrive
   useEffect(() => {
@@ -331,9 +438,19 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
             : {}),
           ...(evalBlock?.bindings?.telegramTargetIds
             ? { telegramTargetIds: evalBlock.bindings.telegramTargetIds }
+            : {}),
+          ...(isIntegrityActive
+            ? {
+                integrityLog: {
+                  ...integrityRef.current,
+                  enabled: true,
+                  events: [...integrityRef.current.events]
+                }
+              }
             : {})
         });
 
+        void refreshAuth();
         router.push(`/reports/${encodeURIComponent(result.reportId)}?autoDispatch=1`);
       } catch (err: unknown) {
         const isQuota = err instanceof ApiError && Boolean(err.isQuotaError || err.status === 429);
@@ -349,8 +466,10 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
       code,
       exercise,
       filteredTemplateSchema,
+      isIntegrityActive,
       meta,
       rawOcrTexts,
+      refreshAuth,
       resolvedInstructorId,
       router,
       user,
@@ -493,10 +612,18 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
           <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-zinc-900 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
             {exercise.skill}
           </span>
-          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Published v{exercise.activeVersion.version}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {isIntegrityActive && (
+              <span className="glass-pill">
+                <ShieldCheck className="h-3.5 w-3.5 text-zinc-600" />
+                Exam Integrity Active
+              </span>
+            )}
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Published v{exercise.activeVersion.version}
+            </span>
+          </div>
         </div>
 
         <h1 className="relative mt-4 text-2xl font-extrabold tracking-tight text-zinc-950 sm:text-3xl">
@@ -649,7 +776,41 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
             </div>
           )}
         </div>
+        {/* Low-Credit Warning inside Student Identity Card */}
+        {isLowCredit && (
+          <div
+            role="status"
+            className="mt-4 flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-amber-300/80 bg-amber-50/85 px-4 py-3 text-xs text-amber-900 backdrop-blur-md"
+          >
+            <div className="flex items-center gap-2">
+              <Coins className="h-4 w-4 shrink-0 text-amber-700" />
+              <span>
+                <strong>Low Credit Balance:</strong> You currently have{' '}
+                <strong>{user.creditBalance}</strong> credit
+                {user.creditBalance === 1 ? '' : 's'} remaining (warning threshold:{' '}
+                {lowCreditThreshold}).
+              </span>
+            </div>
+            <Link
+              href="/profile"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-amber-300 bg-white/80 px-2.5 py-1 font-semibold text-amber-950 transition-colors hover:bg-white"
+            >
+              View Credits
+            </Link>
+          </div>
+        )}
       </section>
+
+      {/* Integrity Blocked Toast Notice */}
+      {integrityToast && (
+        <div
+          role="status"
+          className="mb-4 flex items-center gap-2.5 rounded-xl border border-amber-300/80 bg-amber-50/90 px-4 py-2.5 text-xs font-medium text-amber-900 shadow-glass backdrop-blur-xl"
+        >
+          <ShieldCheck className="h-4 w-4 shrink-0 text-amber-700" />
+          <span>{integrityToast}</span>
+        </div>
+      )}
 
       {/* Error Banner */}
       {submitError && (
@@ -671,8 +832,47 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
         </div>
       )}
 
-      {/* Dynamic Lego Template (legacy identity inputs suppressed) */}
-      <TemplateRenderer template={filteredTemplateSchema} ctx={ctx} />
+      {/* Dynamic Lego Template (legacy identity inputs suppressed; protected when integrity enabled) */}
+      <div
+        onCopy={(e) => {
+          if (!isIntegrityActive) return;
+          e.preventDefault();
+          recordIntegrityEvent(
+            'copy_blocked',
+            'Copy blocked inside assessment form',
+            'Copying is disabled while Exam Integrity Protection is active.'
+          );
+        }}
+        onPaste={(e) => {
+          if (!isIntegrityActive) return;
+          e.preventDefault();
+          recordIntegrityEvent(
+            'paste_blocked',
+            'Paste blocked inside assessment form',
+            'Pasting is disabled while Exam Integrity Protection is active.'
+          );
+        }}
+        onCut={(e) => {
+          if (!isIntegrityActive) return;
+          e.preventDefault();
+          recordIntegrityEvent(
+            'cut_blocked',
+            'Cut blocked inside assessment form',
+            'Cutting text is disabled while Exam Integrity Protection is active.'
+          );
+        }}
+        onContextMenu={(e) => {
+          if (!isIntegrityActive) return;
+          e.preventDefault();
+          recordIntegrityEvent(
+            'right_click_blocked',
+            'Context menu blocked inside assessment form',
+            'Right-click menu is disabled while Exam Integrity Protection is active.'
+          );
+        }}
+      >
+        <TemplateRenderer template={filteredTemplateSchema} ctx={ctx} />
+      </div>
     </PageEntrance>
   );
 }

@@ -45,6 +45,12 @@ import {
   listUsersAdmin,
   updateUserAdmin
 } from '../services/user-admin.service.js';
+import {
+  adjustUserCreditsAdmin,
+  getBillingConfig,
+  updateBillingConfig
+} from '../services/credits.service.js';
+import { getTokenConsumptionMetrics } from '../services/metrics.service.js';
 
 const router = Router();
 
@@ -339,6 +345,47 @@ router.delete('/users/:id', async (req: Request, res: Response, next: NextFuncti
     const id = String(req.params.id || '');
     const actorUser = res.locals.authUser as User | undefined;
     const data = await deleteUserAdmin(id, actorUser?.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Billing Config, User Credit Adjustment & Token Metrics
+router.get('/settings/billing', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = await getBillingConfig();
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/settings/billing', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = await updateBillingConfig(req.body);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/users/:id/credits', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id || '');
+    const actorUser = res.locals.authUser as User | undefined;
+    const data = await adjustUserCreditsAdmin(id, actorUser?.id ?? null, req.body);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/metrics/tokens', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const rawDays = typeof req.query.days === 'string' ? Number.parseInt(req.query.days, 10) : 30;
+    const days = Number.isFinite(rawDays) ? rawDays : 30;
+    const data = await getTokenConsumptionMetrics(days);
     res.json({ success: true, data });
   } catch (err) {
     next(err);

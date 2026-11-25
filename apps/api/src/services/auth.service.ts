@@ -14,6 +14,7 @@ import { logger } from '../lib/logger.js';
 import { sendPasswordResetEmail } from '../lib/mailer.js';
 import { generateOpaqueToken, hashPassword, sha256Hex, verifyPassword } from '../lib/password.js';
 import { prisma, TX_OPTIONS } from '../lib/prisma.js';
+import { getBillingConfig, grantWelcomeBonusTx } from './credits.service.js';
 import { HttpError } from './exercise.service.js';
 
 export const SESSION_COOKIE_NAME = 'edumenai_session';
@@ -36,6 +37,9 @@ export interface MePayload {
   approvedInstructors: PublicInstructorView[];
   pendingInstructorCount: number;
   unreadNotificationCount: number;
+  lowCreditThreshold: number;
+  enforceCredits: boolean;
+  isLowCredit: boolean;
 }
 
 function normalizeOptionalField(value: string | null | undefined): string | null | undefined {
@@ -155,6 +159,10 @@ export async function registerUser(
       }
     }
 
+    if (role === 'STUDENT') {
+      await grantWelcomeBonusTx(tx, user.id);
+    }
+
     await tx.session.create({
       data: {
         userId: user.id,
@@ -165,7 +173,7 @@ export async function registerUser(
       }
     });
 
-    return user;
+    return tx.user.findUniqueOrThrow({ where: { id: user.id } });
   }, TX_OPTIONS);
 
   return {
@@ -252,16 +260,22 @@ export async function getSessionContext(rawToken: string): Promise<SessionContex
 }
 
 export async function getMePayload(userId: string): Promise<MePayload> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId }
-  });
+  const [user, billingConfig] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId }
+    }),
+    getBillingConfig()
+  ]);
 
   if (!user || user.accountStatus === 'SUSPENDED') {
     return {
       user: null,
       approvedInstructors: [],
       pendingInstructorCount: 0,
-      unreadNotificationCount: 0
+      unreadNotificationCount: 0,
+      lowCreditThreshold: billingConfig.lowCreditThreshold,
+      enforceCredits: billingConfig.enforceCredits,
+      isLowCredit: false
     };
   }
 
@@ -313,7 +327,11 @@ export async function getMePayload(userId: string): Promise<MePayload> {
     user: toAuthUserView(user),
     approvedInstructors: enrollments.map((e) => e.instructor),
     pendingInstructorCount,
-    unreadNotificationCount
+    unreadNotificationCount,
+    lowCreditThreshold: billingConfig.lowCreditThreshold,
+    enforceCredits: billingConfig.enforceCredits,
+    isLowCredit:
+      user.role !== 'ADMIN' && user.creditBalance <= billingConfig.lowCreditThreshold
   };
 }
 

@@ -9,6 +9,10 @@ import {
   resolveVersionForExecution
 } from '../services/exercise.service.js';
 import { createEvaluatedSubmission } from '../services/submission.service.js';
+import {
+  checkCreditEligibility,
+  deductCreditsForAiUsage
+} from '../services/credits.service.js';
 import { isAdminAuthorized } from '../middleware/admin-auth.middleware.js';
 import { prisma } from '../lib/prisma.js';
 import { evaluateAssessment, runDynamicOcr } from '../ai-gateway/evaluation.pipeline.js';
@@ -227,12 +231,29 @@ router.post(
         return;
       }
 
+      if (!isPreview && authUser) {
+        await checkCreditEligibility(authUser, resolved.exercise.ownerId);
+      }
+
       const mimeType = req.file.mimetype || 'application/octet-stream';
       const ocrResult = await runDynamicOcr({
         fileBuffer: req.file.buffer,
         mimeType,
         promptEntry
       });
+
+      if (!isPreview && authUser) {
+        try {
+          await deductCreditsForAiUsage({
+            studentUser: authUser,
+            instructorId: resolved.exercise.ownerId,
+            tokensUsed: ocrResult.usage?.totalTokens ?? 0,
+            operation: 'ocr'
+          });
+        } catch (billingErr: unknown) {
+          logger.warn({ err: billingErr, code }, 'Failed to deduct OCR credits');
+        }
+      }
 
       res.json({
         success: true,
@@ -452,6 +473,10 @@ router.post(
         totalMax
       };
 
+      if (!isPreview && authUser) {
+        await checkCreditEligibility(authUser, resolvedInstructorId);
+      }
+
       const evaluationResult = await evaluateAssessment({
         studentName: resolvedStudent.name,
         taskPrompt: parsedBody.taskPrompt,
@@ -473,8 +498,29 @@ router.post(
         transcriptionMeta: parsedBody.transcriptionMeta,
         isPreview,
         formData: parsedBody.formData,
+        ...(parsedBody.integrityLog ? { integrityLog: parsedBody.integrityLog } : {}),
         evaluationResult
       });
+
+      let creditDeduction: {
+        creditsDeducted: number;
+        balanceAfter: number;
+        isLowCredit: boolean;
+      } | null = null;
+
+      if (!isPreview && authUser) {
+        try {
+          creditDeduction = await deductCreditsForAiUsage({
+            studentUser: authUser,
+            instructorId: resolvedInstructorId,
+            submissionId: persisted.submissionId,
+            tokensUsed: evaluationResult.usage?.totalTokens ?? 0,
+            operation: 'evaluation'
+          });
+        } catch (billingErr: unknown) {
+          logger.warn({ err: billingErr, code }, 'Failed to deduct evaluation credits');
+        }
+      }
 
       if (!isPreview) {
         void (async () => {
@@ -520,7 +566,8 @@ router.post(
           report: evaluationResult.report,
           provider: evaluationResult.provider,
           model: evaluationResult.model,
-          usage: evaluationResult.usage
+          usage: evaluationResult.usage,
+          ...(creditDeduction ? { credits: creditDeduction } : {})
         }
       });
     } catch (err) {

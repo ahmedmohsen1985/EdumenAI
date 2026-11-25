@@ -32,8 +32,10 @@ model User {
   studentEnrollments    StudentInstructor[]  @relation("StudentEnrollments")
   instructorEnrollments StudentInstructor[]  @relation("InstructorEnrollments")
   notifications         Notification[]
-  ownedExercises        Exercise[]           @relation("ExerciseOwner")
-  telegramTargets       TelegramTarget[]     @relation("TelegramTargetOwner")
+  ownedExercises          Exercise[]           @relation("ExerciseOwner")
+  telegramTargets         TelegramTarget[]     @relation("TelegramTargetOwner")
+  creditTransactions      CreditTransaction[]  @relation("UserCreditTransactions")
+  actedCreditTransactions CreditTransaction[]  @relation("ActorCreditTransactions")
 
   @@index([telegramId])
   @@index([role, accountStatus])
@@ -255,10 +257,11 @@ model Submission {
   isPreview         Boolean           @default(false)
   formData          Json?
   integrityLog      Json?
-  status            SubmissionStatus  @default(PENDING)
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  status            SubmissionStatus    @default(PENDING)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
   report            EvaluationReport?
+  creditTransactions CreditTransaction[]
 
   @@index([exerciseId, createdAt])
   @@index([studentId])
@@ -271,6 +274,46 @@ enum SubmissionStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+enum CreditTransactionType {
+  WELCOME_BONUS
+  TOP_UP
+  DEDUCTION
+  ADJUSTMENT
+  REFUND
+}
+
+model PlatformBillingConfig {
+  id                  String   @id @default(cuid())
+  key                 String   @unique @default("default")
+  tokensPerCredit     Int      @default(1000)
+  welcomeBonusCredits Int      @default(50)
+  lowCreditThreshold  Int      @default(10)
+  enforceCredits      Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model CreditTransaction {
+  id           String                @id @default(cuid())
+  userId       String
+  user         User                  @relation("UserCreditTransactions", fields: [userId], references: [id], onDelete: Cascade)
+  actorUserId  String?
+  actor        User?                 @relation("ActorCreditTransactions", fields: [actorUserId], references: [id], onDelete: SetNull)
+  submissionId String?
+  submission   Submission?           @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+  type         CreditTransactionType
+  amount       Int
+  balanceAfter Int
+  tokensUsed   Int?
+  operation    String?
+  note         String?
+  createdAt    DateTime              @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([submissionId])
 }
 
 model EvaluationReport {

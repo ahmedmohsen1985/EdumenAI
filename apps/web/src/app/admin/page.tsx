@@ -5,14 +5,17 @@ import Link from 'next/link';
 import {
   AlertCircle,
   ArrowRight,
+  BarChart3,
   Bot,
   CheckCircle2,
+  Coins,
   Cpu,
   FileEdit,
   Layers,
   Loader2,
   Sparkles
 } from 'lucide-react';
+import type { TokenMetricsResponse } from '@edumenai/shared';
 import {
   ADMIN_EXERCISES_CACHE_KEYS,
   fetchAdminExercises,
@@ -20,6 +23,7 @@ import {
   type AdminExerciseSummary,
   type AdminPlatformStats
 } from '../../lib/admin-exercises-api';
+import { fetchTokenMetrics } from '../../lib/admin-settings-api';
 import { getCached, isCacheFresh } from '../../lib/client-cache';
 import { PageEntrance, StaggerCard, StaggerGrid } from '../../components/ui/MotionPrimitives';
 
@@ -30,8 +34,23 @@ export default function AdminOverviewPage(): React.ReactElement {
 
   const [exercises, setExercises] = useState<AdminExerciseSummary[]>(cachedExercises ?? []);
   const [stats, setStats] = useState<AdminPlatformStats | null>(cachedStats);
+  const [tokenMetrics, setTokenMetrics] = useState<TokenMetricsResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(!hasBothCached);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchTokenMetrics(30)
+      .then((res) => {
+        if (!cancelled) setTokenMetrics(res);
+      })
+      .catch(() => {
+        // Non-blocking overview card
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const fresh =
@@ -287,6 +306,68 @@ export default function AdminOverviewPage(): React.ReactElement {
               >
                 Test &amp; Edit
               </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 30-Day Token Usage & Credits Summary Card */}
+      <div className="glass-panel p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200/70 pb-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-zinc-700" />
+            <h2 className="text-base font-bold text-zinc-900">
+              Token Usage &amp; Credits (Last 30 Days)
+            </h2>
+          </div>
+          <Link
+            href="/admin/settings/ai"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-700 hover:text-zinc-900 hover:underline"
+          >
+            View Metrics &amp; Billing
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-zinc-200/70 bg-white/60 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              Total Tokens
+            </div>
+            <div className="mt-1 text-xl font-extrabold tabular-nums text-zinc-900">
+              {tokenMetrics ? tokenMetrics.summary.totalTokens.toLocaleString('en-US') : '—'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200/70 bg-white/60 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              Evaluations
+            </div>
+            <div className="mt-1 text-xl font-extrabold tabular-nums text-zinc-900">
+              {tokenMetrics ? tokenMetrics.summary.totalEvaluations.toLocaleString('en-US') : '—'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200/70 bg-white/60 px-4 py-3">
+            <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              <Coins className="h-3 w-3" />
+              Credits Deducted
+            </div>
+            <div className="mt-1 text-xl font-extrabold tabular-nums text-zinc-900">
+              {tokenMetrics
+                ? tokenMetrics.summary.totalCreditsDeducted.toLocaleString('en-US')
+                : '—'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200/70 bg-white/60 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              Avg Latency
+            </div>
+            <div className="mt-1 text-xl font-extrabold tabular-nums text-zinc-900">
+              {tokenMetrics && tokenMetrics.summary.avgLatencyMs > 0
+                ? `${(tokenMetrics.summary.avgLatencyMs / 1000).toFixed(1)}s`
+                : '—'}
             </div>
           </div>
         </div>

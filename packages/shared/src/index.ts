@@ -5,3 +5,4 @@ export * from './schemas/json-schemas.js';
 export * from './schemas/template.schema.js';
 export * from './schemas/settings.schema.js';
 export * from './schemas/auth.schema.js';
+export * from './schemas/credits.schema.js';

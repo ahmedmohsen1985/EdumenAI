@@ -49,7 +49,8 @@ export const MARKING_JSON_SCHEMA = {
     },
     corrected_version: {
       type: 'string',
-      description: "Full, complete polished student text covering 100% of the student draft from the first word to the very last concluding sentence without cutting off or stopping early. Highlight corrections using plain <mark>word</mark> tags (no class attribute or quotes). Never tag single letters."
+      description:
+        'Full, complete polished student text covering 100% of the student draft from the first word to the very last concluding sentence without cutting off or stopping early. Highlight direct error corrections using plain <mark>word</mark> tags (yellow, no class attribute or quotes) and highlight optional suggested enhancements or extra phrasing ideas using plain <ins>phrase</ins> tags (sky blue, no class attribute or quotes). Never tag single letters.'
     }
   },
   required: ['marks', 'justification', 'errors', 'content_feedback', 'corrected_version']
@@ -126,7 +127,8 @@ export function buildMarkingJsonSchema(
       },
       corrected_version: {
         type: 'string',
-        description: "Full, complete polished student text covering 100% of the student draft from the first word to the very last concluding sentence without cutting off or stopping early. Highlight corrections using plain <mark>word</mark> tags (no class attribute or quotes). Never tag single letters."
+        description:
+        'Full, complete polished student text covering 100% of the student draft from the first word to the very last concluding sentence without cutting off or stopping early. Highlight direct error corrections using plain <mark>word</mark> tags (yellow, no class attribute or quotes) and highlight optional suggested enhancements or extra phrasing ideas using plain <ins>phrase</ins> tags (sky blue, no class attribute or quotes). Never tag single letters.'
       }
     },
     required: ['marks', 'justification', 'errors', 'content_feedback', 'corrected_version']

@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Coins,
   Copy,
   KeyRound,
   Loader2,
@@ -31,6 +32,7 @@ import type {
 } from '@edumenai/shared';
 import {
   ApiError,
+  adjustAdminUserCredits,
   createAdminUser,
   deleteAdminUser,
   fetchAdminUsers,
@@ -195,6 +197,62 @@ export function AdminUsersManager(): React.ReactElement {
   const [createForm, setCreateForm] = useState<CreateUserFormState>(INITIAL_CREATE_FORM);
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState<boolean>(false);
+
+  // Adjust / Top-Up Credits modal
+  const [creditModalUser, setCreditModalUser] = useState<AdminUserView | null>(null);
+  const [creditType, setCreditType] = useState<'TOP_UP' | 'ADJUSTMENT' | 'REFUND'>('TOP_UP');
+  const [creditAmountInput, setCreditAmountInput] = useState<string>('50');
+  const [creditNoteInput, setCreditNoteInput] = useState<string>('');
+  const [creditModalError, setCreditModalError] = useState<string | null>(null);
+  const [isAdjustingCredits, setIsAdjustingCredits] = useState<boolean>(false);
+
+  const openCreditModal = (u: AdminUserView): void => {
+    setCreditModalUser(u);
+    setCreditType('TOP_UP');
+    setCreditAmountInput('50');
+    setCreditNoteInput('');
+    setCreditModalError(null);
+  };
+
+  const handleAdjustCreditsSubmit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (!creditModalUser) return;
+    const parsedAmount = Number.parseInt(creditAmountInput, 10);
+    const trimmedNote = creditNoteInput.trim();
+    if (!Number.isFinite(parsedAmount) || parsedAmount === 0) {
+      setCreditModalError('Enter a non-zero integer credit amount.');
+      return;
+    }
+    if ((creditType === 'TOP_UP' || creditType === 'REFUND') && parsedAmount < 0) {
+      setCreditModalError('Top-Up and Refund amounts must be positive. Use Adjustment for deductions.');
+      return;
+    }
+    if (trimmedNote.length < 2) {
+      setCreditModalError('Please enter a short reason/note (at least 2 characters).');
+      return;
+    }
+
+    setIsAdjustingCredits(true);
+    setCreditModalError(null);
+    try {
+      await adjustAdminUserCredits(creditModalUser.id, {
+        type: creditType,
+        amount: parsedAmount,
+        note: trimmedNote
+      });
+      setCreditModalUser(null);
+      await loadData({ silent: true });
+      if (creditModalUser.id === currentUserId) {
+        void refreshAuth();
+      }
+    } catch (err: unknown) {
+      setCreditModalError(
+        err instanceof ApiError ? err.message : 'Failed to adjust user credits.'
+      );
+    } finally {
+      setIsAdjustingCredits(false);
+    }
+  };
 
   // Debounce search input
   useEffect(() => {
@@ -479,6 +537,10 @@ export function AdminUsersManager(): React.ReactElement {
 
   const renderActivitySummary = (u: AdminUserView): React.ReactElement => (
     <div className="flex flex-wrap gap-1.5">
+      <span className="glass-pill tabular-nums">
+        <Coins className="h-3 w-3 text-zinc-500" />
+        {u.creditBalance} cr
+      </span>
       {u.role === 'INSTRUCTOR' ? (
         <span className="glass-pill">
           {u.instructorStudentCount} {u.instructorStudentCount === 1 ? 'student' : 'students'}
@@ -612,6 +674,17 @@ export function AdminUsersManager(): React.ReactElement {
             </option>
           ))}
         </select>
+
+        <button
+          type="button"
+          onClick={() => openCreditModal(u)}
+          disabled={isBusy}
+          title="Adjust / Top-Up Credits"
+          aria-label={`Adjust credits for ${u.name || u.email || 'user'}`}
+          className="glass-btn-secondary !rounded-xl !p-2"
+        >
+          <Coins className="h-3.5 w-3.5" />
+        </button>
 
         <button
           type="button"
@@ -1286,6 +1359,137 @@ export function AdminUsersManager(): React.ReactElement {
                   <span>Create User</span>
                 </>
               )}
+            </button>
+          </div>
+        </form>
+      </AnimatedModal>
+
+      {/* Adjust / Top-Up Credits Modal */}
+      <AnimatedModal
+        open={creditModalUser !== null}
+        onClose={() => {
+          if (!isAdjustingCredits) setCreditModalUser(null);
+        }}
+        ariaLabelledBy="adjust-credits-modal-title"
+        maxWidthClassName="max-w-md"
+      >
+        <form onSubmit={(e) => void handleAdjustCreditsSubmit(e)} className="space-y-4 p-6">
+          <div className="flex items-center justify-between border-b border-zinc-900/[0.06] pb-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 text-white">
+                <Coins className="h-4 w-4" />
+              </span>
+              <div>
+                <h2
+                  id="adjust-credits-modal-title"
+                  className="text-base font-extrabold tracking-tight text-zinc-950"
+                >
+                  Adjust / Top-Up Credits
+                </h2>
+                <p className="text-xs text-zinc-500">
+                  {creditModalUser?.name || creditModalUser?.email || 'User'} · Current balance:{' '}
+                  <strong className="text-zinc-800">{creditModalUser?.creditBalance ?? 0} cr</strong>
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={isAdjustingCredits}
+              onClick={() => setCreditModalUser(null)}
+              aria-label="Close credits modal"
+              className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-900/[0.06]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {creditModalError && (
+            <div
+              role="alert"
+              className="rounded-xl border border-rose-200/80 bg-rose-50/85 px-3.5 py-2.5 text-xs text-rose-800"
+            >
+              {creditModalError}
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="credit-tx-type"
+                className="mb-1 block text-xs font-semibold text-zinc-600"
+              >
+                Transaction Type
+              </label>
+              <select
+                id="credit-tx-type"
+                value={creditType}
+                onChange={(e) =>
+                  setCreditType(e.target.value as 'TOP_UP' | 'ADJUSTMENT' | 'REFUND')
+                }
+                className="glass-input"
+              >
+                <option value="TOP_UP">Top-Up</option>
+                <option value="ADJUSTMENT">Adjustment (+/-)</option>
+                <option value="REFUND">Refund</option>
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="credit-tx-amount"
+                className="mb-1 block text-xs font-semibold text-zinc-600"
+              >
+                Credit Amount
+              </label>
+              <input
+                id="credit-tx-amount"
+                type="number"
+                step={1}
+                required
+                value={creditAmountInput}
+                onChange={(e) => setCreditAmountInput(e.target.value)}
+                placeholder="e.g. 50 or -10"
+                className="glass-input tabular-nums"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="credit-tx-note"
+              className="mb-1 block text-xs font-semibold text-zinc-600"
+            >
+              Audit Note *
+            </label>
+            <input
+              id="credit-tx-note"
+              type="text"
+              required
+              minLength={2}
+              maxLength={300}
+              value={creditNoteInput}
+              onChange={(e) => setCreditNoteInput(e.target.value)}
+              placeholder="e.g., Term 2 credit top-up or manual correction"
+              className="glass-input"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              disabled={isAdjustingCredits}
+              onClick={() => setCreditModalUser(null)}
+              className="glass-btn-secondary"
+            >
+              Cancel
+            </button>
+            <button type="submit" disabled={isAdjustingCredits} className="glass-btn-primary">
+              {isAdjustingCredits ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Coins className="h-4 w-4" />
+              )}
+              Apply Credits
             </button>
           </div>
         </form>

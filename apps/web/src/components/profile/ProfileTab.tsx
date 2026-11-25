@@ -1,10 +1,31 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Coins, Loader2, Save } from 'lucide-react';
-import type { AuthUserView, UpdateProfileRequest } from '@edumenai/shared';
-import { updateMyProfile } from '../../lib/api';
+import React, { useEffect, useState } from 'react';
+import { AlertTriangle, Coins, History, Loader2, Save } from 'lucide-react';
+import type {
+  AuthUserView,
+  CreditTransactionType,
+  MyCreditsPayload,
+  UpdateProfileRequest
+} from '@edumenai/shared';
+import { fetchMyCredits, updateMyProfile } from '../../lib/api';
+import { useAuth } from '../auth/AuthProvider';
 import { Banner, Field, SectionTitle, errorMessage, toNullable } from './shared';
+
+function formatTxTypeLabel(type: CreditTransactionType): string {
+  switch (type) {
+    case 'WELCOME_BONUS':
+      return 'Welcome Bonus';
+    case 'TOP_UP':
+      return 'Top-Up';
+    case 'DEDUCTION':
+      return 'AI Usage';
+    case 'ADJUSTMENT':
+      return 'Adjustment';
+    case 'REFUND':
+      return 'Refund';
+  }
+}
 
 export interface ProfileTabProps {
   user: AuthUserView;
@@ -12,6 +33,7 @@ export interface ProfileTabProps {
 }
 
 export function ProfileTab({ user, onSaved }: ProfileTabProps): React.ReactElement {
+  const { isLowCredit: authLowCredit, lowCreditThreshold: authLowThreshold } = useAuth();
   const [name, setName] = useState<string>(user.name ?? '');
   const [school, setSchool] = useState<string>(user.school ?? '');
   const [className, setClassName] = useState<string>(user.className ?? '');
@@ -23,6 +45,39 @@ export function ProfileTab({ user, onSaved }: ProfileTabProps): React.ReactEleme
   const [saving, setSaving] = useState<boolean>(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [creditsPayload, setCreditsPayload] = useState<MyCreditsPayload | null>(null);
+  const [creditsLoading, setCreditsLoading] = useState<boolean>(true);
+  const [creditsError, setCreditsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCreditsLoading(true);
+    setCreditsError(null);
+    void fetchMyCredits(30)
+      .then((data) => {
+        if (!cancelled) setCreditsPayload(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setCreditsError(
+            err instanceof Error ? err.message : 'Unable to load credit history.'
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCreditsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user.creditBalance]);
+
+  const effectiveLowCredit = creditsPayload ? creditsPayload.isLowCredit : authLowCredit;
+  const effectiveThreshold = creditsPayload
+    ? creditsPayload.lowCreditThreshold
+    : authLowThreshold;
+  const effectiveBalance = creditsPayload ? creditsPayload.creditBalance : user.creditBalance;
 
   const isStudent = user.role === 'STUDENT';
   const isInstructor = user.role === 'INSTRUCTOR';
@@ -237,22 +292,111 @@ export function ProfileTab({ user, onSaved }: ProfileTabProps): React.ReactEleme
         </div>
       </form>
 
-      <aside className="glass-panel-strong h-fit p-5" aria-label="Credit balance">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          <Coins className="h-4 w-4" aria-hidden="true" />
-          Credit Balance
+      <aside className="space-y-4" aria-label="Credit balance and usage">
+        <div className="glass-panel-strong p-5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              <Coins className="h-4 w-4" aria-hidden="true" />
+              Credit Balance
+            </div>
+            {creditsPayload?.enforceCredits && (
+              <span className="glass-pill !text-[10px]">Enforced</span>
+            )}
+          </div>
+          <p className="mt-3 flex items-baseline gap-2">
+            <span className="text-4xl font-semibold tracking-tight text-zinc-900 tabular-nums">
+              {effectiveBalance}
+            </span>
+            <span className="text-sm font-medium text-zinc-600">Credits</span>
+          </p>
+          <p className="mt-3 text-xs leading-relaxed text-zinc-500">
+            {isInstructor
+              ? 'Credits fund AI grading. Turn on sponsorship to cover your students’ submissions.'
+              : 'Credits are spent when AI grades your submissions.'}
+          </p>
+
+          {effectiveLowCredit && (
+            <div
+              role="status"
+              className="mt-4 flex items-start gap-2 rounded-xl border border-amber-300/80 bg-amber-50/85 p-3 text-xs text-amber-900"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+              <div>
+                <p className="font-semibold">Low Credit Warning</p>
+                <p className="mt-0.5 leading-relaxed">
+                  Your balance is at or below {effectiveThreshold} credits. Contact an administrator
+                  to top up your account.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-        <p className="mt-3 flex items-baseline gap-2">
-          <span className="text-4xl font-semibold tracking-tight text-zinc-900 tabular-nums">
-            {user.creditBalance}
-          </span>
-          <span className="text-sm font-medium text-zinc-600">Credits</span>
-        </p>
-        <p className="mt-3 text-xs leading-relaxed text-zinc-500">
-          {isInstructor
-            ? 'Credits fund AI grading. Turn on sponsorship to cover your students’ submissions.'
-            : 'Credits are spent when AI grades your submissions.'}
-        </p>
+
+        {/* Credit Usage & Transaction History */}
+        <section className="glass-panel overflow-hidden">
+          <div className="flex items-center justify-between border-b border-zinc-900/[0.06] px-4 py-3">
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-zinc-600">
+              <History className="h-3.5 w-3.5" aria-hidden="true" />
+              Credit History
+            </div>
+            {creditsPayload && (
+              <span className="text-[11px] font-medium text-zinc-400">
+                Last {creditsPayload.transactions.length}
+              </span>
+            )}
+          </div>
+
+          {creditsLoading ? (
+            <div className="flex items-center gap-2 px-4 py-6 text-xs text-zinc-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading transactions...
+            </div>
+          ) : creditsError ? (
+            <div className="px-4 py-4 text-xs text-rose-700">{creditsError}</div>
+          ) : !creditsPayload || creditsPayload.transactions.length === 0 ? (
+            <div className="px-4 py-6 text-center text-xs text-zinc-500">
+              No credit transactions recorded yet.
+            </div>
+          ) : (
+            <ul className="max-h-80 divide-y divide-zinc-900/[0.05] overflow-y-auto">
+              {creditsPayload.transactions.map((tx) => {
+                const isPositive = tx.amount > 0;
+                return (
+                  <li key={tx.id} className="px-4 py-3 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-zinc-900">
+                        {formatTxTypeLabel(tx.type)}
+                      </span>
+                      <span
+                        className={`shrink-0 whitespace-nowrap font-bold tabular-nums ${
+                          isPositive ? 'text-emerald-700' : 'text-rose-700'
+                        }`}
+                      >
+                        {isPositive ? `+${tx.amount}` : tx.amount} cr
+                      </span>
+                    </div>
+                    {(tx.note || tx.operation) && (
+                      <p className="mt-0.5 line-clamp-2 text-[11px] text-zinc-600">
+                        {tx.note || `Operation: ${tx.operation}`}
+                      </p>
+                    )}
+                    <div className="mt-1 flex items-center justify-between text-[10px] text-zinc-400">
+                      <span>
+                        {new Date(tx.createdAt).toLocaleDateString('en-GB', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                      <span className="tabular-nums">Bal: {tx.balanceAfter}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </aside>
     </div>
   );

@@ -25,6 +25,7 @@ export interface AdminExerciseSummary {
   title: string;
   description: string | null;
   totalMarks: number;
+  integrityEnabled?: boolean;
   versionCount: number;
   activeVersion: {
     id: string;
@@ -60,6 +61,7 @@ export interface AdminExerciseDetail {
   title: string;
   description: string | null;
   totalMarks: number;
+  integrityEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
   versions: AdminPromptVersionView[];
@@ -78,6 +80,7 @@ export interface SaveExerciseDraftAdminInput {
   description?: string | null;
   skill?: ExerciseSkill;
   totalMarks?: number;
+  integrityEnabled?: boolean;
   templateSchema?: TemplateConfig;
   promptEntries?: PromptEntry[];
   markingSchema?: Record<string, unknown>;

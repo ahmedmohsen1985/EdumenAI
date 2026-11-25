@@ -4,15 +4,18 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { PersistedReport } from '@edumenai/shared';
 import {
+  AlertTriangle,
   ArrowRight,
+  CheckCircle2,
   FileText,
   Loader2,
   Lock,
   LogIn,
   Search,
+  Trash2,
   UserPlus
 } from 'lucide-react';
-import { fetchReports } from '../../lib/api';
+import { deleteReport, fetchReports } from '../../lib/api';
 import { useAuth } from '../../components/auth/AuthProvider';
 import { PageEntrance } from '../../components/ui/MotionPrimitives';
 
@@ -24,8 +27,33 @@ export default function ReportsArchivePage(): React.ReactElement {
   const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const isStaff = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
+
+  const canDeleteItem = (item: PersistedReport): boolean =>
+    Boolean(
+      user?.role === 'ADMIN' ||
+        (user?.role === 'INSTRUCTOR' &&
+          Boolean(item.exerciseOwnerId) &&
+          item.exerciseOwnerId === user.id)
+    );
+
+  const handleDeleteReport = async (id: string): Promise<void> => {
+    setDeletingId(id);
+    setError(null);
+    try {
+      await deleteReport(id);
+      setConfirmDeleteId(null);
+      setItems((prev) => prev.filter((r) => r.id !== id));
+      setTotal((prev) => Math.max(0, prev - 1));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to delete report.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -196,44 +224,113 @@ export default function ReportsArchivePage(): React.ReactElement {
                   <th className="px-5 py-3.5">Student</th>
                   <th className="px-5 py-3.5">Exercise</th>
                   <th className="px-5 py-3.5">Score</th>
+                  {isStaff && <th className="px-5 py-3.5">Integrity</th>}
                   <th className="px-5 py-3.5">Provider / Model</th>
                   <th className="px-5 py-3.5">Date</th>
                   <th className="px-5 py-3.5 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-900/[0.05]">
-                {items.map((item) => (
-                  <tr key={item.id} className="transition-colors duration-200 hover:bg-white/70">
-                    <td className="px-5 py-4">
-                      <div className="font-semibold text-zinc-900">{item.studentName}</div>
-                      <div className="text-xs text-zinc-500">
-                        {item.studentClass || item.studentSchool || 'General'}
-                        {item.instructorName ? ` · Instructor: ${item.instructorName}` : ''}
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="glass-pill uppercase">{item.exerciseCode}</span>
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 font-bold tabular-nums text-zinc-900">
-                      {item.marks.total} / {item.marks.total_max}
-                    </td>
-                    <td className="px-5 py-4 text-xs text-zinc-600">
-                      {item.provider} · {item.model}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 text-xs text-zinc-600">
-                      {new Date(item.createdAt).toLocaleDateString('en-GB')}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <Link
-                        href={`/reports/${encodeURIComponent(item.id)}`}
-                        className="glass-btn-secondary !rounded-lg !px-3 !py-1.5 text-xs"
-                      >
-                        View Report
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {items.map((item) => {
+                  const log = isStaff ? item.integrityLog : null;
+                  const flagCount = log
+                    ? log.totalViolations ||
+                      log.tabSwitchCount +
+                        log.windowBlurCount +
+                        log.pasteBlockedCount +
+                        log.copyBlockedCount +
+                        log.rightClickBlockedCount
+                    : 0;
+                  const allowDelete = canDeleteItem(item);
+                  const isConfirming = confirmDeleteId === item.id;
+                  const isDeleting = deletingId === item.id;
+
+                  return (
+                    <tr key={item.id} className="transition-colors duration-200 hover:bg-white/70">
+                      <td className="px-5 py-4">
+                        <div className="font-semibold text-zinc-900">{item.studentName}</div>
+                        <div className="text-xs text-zinc-500">
+                          {item.studentClass || item.studentSchool || 'General'}
+                          {item.instructorName ? ` · Instructor: ${item.instructorName}` : ''}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="glass-pill uppercase">{item.exerciseCode}</span>
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 font-bold tabular-nums text-zinc-900">
+                        {item.marks.total} / {item.marks.total_max}
+                      </td>
+                      {isStaff && (
+                        <td className="whitespace-nowrap px-5 py-4">
+                          {log ? (
+                            flagCount === 0 ? (
+                              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50/85 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Clean
+                              </span>
+                            ) : (
+                              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-300/80 bg-amber-50/90 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                                <AlertTriangle className="h-3 w-3" />
+                                {flagCount} {flagCount === 1 ? 'flag' : 'flags'}
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-xs text-zinc-400">—</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="px-5 py-4 text-xs text-zinc-600">
+                        {item.provider} · {item.model}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 text-xs text-zinc-600">
+                        {new Date(item.createdAt).toLocaleDateString('en-GB')}
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <Link
+                            href={`/reports/${encodeURIComponent(item.id)}`}
+                            className="glass-btn-secondary !rounded-lg !px-3 !py-1.5 text-xs"
+                          >
+                            View Report
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+
+                          {allowDelete &&
+                            (isConfirming ? (
+                              <div className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/90 px-2 py-1 text-xs">
+                                <button
+                                  type="button"
+                                  disabled={isDeleting}
+                                  onClick={() => void handleDeleteReport(item.id)}
+                                  className="rounded bg-rose-600 px-2 py-0.5 font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                                >
+                                  {isDeleting ? '...' : 'Confirm'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isDeleting}
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="rounded bg-white px-2 py-0.5 font-semibold text-zinc-700"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(item.id)}
+                                title="Delete report"
+                                aria-label={`Delete report for ${item.studentName}`}
+                                className="glass-btn-secondary !rounded-lg !p-2 text-rose-700 hover:!border-rose-200 hover:!bg-rose-50/90"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

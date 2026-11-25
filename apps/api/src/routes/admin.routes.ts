@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
+import type { User } from '@prisma/client';
 import { z } from 'zod';
 import {
   AiProviderIdSchema,
@@ -36,6 +37,14 @@ import {
   updateTelegramTarget,
   upsertTelegramConfig
 } from '../services/telegram.service.js';
+import { toAuthUserView } from '../services/auth.service.js';
+import {
+  createAdminPasswordResetLink,
+  createUserAdmin,
+  deleteUserAdmin,
+  listUsersAdmin,
+  updateUserAdmin
+} from '../services/user-admin.service.js';
 
 const router = Router();
 
@@ -54,11 +63,13 @@ const PublishExerciseBodySchema = z
 
 router.get('/auth/check', (_req: Request, res: Response): void => {
   const mode = typeof res.locals.adminAuthMode === 'string' ? res.locals.adminAuthMode : 'key';
+  const authUser = res.locals.authUser as User | undefined;
   res.json({
     success: true,
     data: {
       authenticated: true,
-      mode
+      mode,
+      user: authUser ? toAuthUserView(authUser) : null
     }
   });
 });
@@ -263,6 +274,71 @@ router.post('/settings/telegram/test', async (req: Request, res: Response, next:
   try {
     const input = TelegramTestSchema.parse(req.body ?? {});
     const data = await sendTelegramTestMessage(input.chatId, input.message);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// User Management & Instructor Approvals
+router.get('/users', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const role = typeof req.query.role === 'string' ? req.query.role : undefined;
+    const accountStatus =
+      typeof req.query.accountStatus === 'string' ? req.query.accountStatus : undefined;
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : undefined;
+    const offset =
+      typeof req.query.offset === 'string' ? Number.parseInt(req.query.offset, 10) : undefined;
+
+    const data = await listUsersAdmin({
+      role,
+      accountStatus,
+      search,
+      limit: Number.isFinite(limit) ? limit : undefined,
+      offset: Number.isFinite(offset) ? offset : undefined
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/users', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = await createUserAdmin(req.body);
+    res.status(201).json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch('/users/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id || '');
+    const actorUser = res.locals.authUser as User | undefined;
+    const data = await updateUserAdmin(id, req.body, actorUser?.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/users/:id/reset-link', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id || '');
+    const data = await createAdminPasswordResetLink(id);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/users/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = String(req.params.id || '');
+    const actorUser = res.locals.authUser as User | undefined;
+    const data = await deleteUserAdmin(id, actorUser?.id);
     res.json({ success: true, data });
   } catch (err) {
     next(err);

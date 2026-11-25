@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -11,8 +11,22 @@ import {
   type BlockOcrHandler,
   type BlockRuntimeContext
 } from '@edumenai/blocks';
-import type { TemplateBlock, TranscriptionMeta } from '@edumenai/shared';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
+import type { TemplateBlock, TemplateConfig, TranscriptionMeta } from '@edumenai/shared';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Building2,
+  CheckCircle2,
+  GraduationCap,
+  Loader2,
+  Lock,
+  LogIn,
+  MessageSquare,
+  Pencil,
+  UserCheck,
+  UserPlus,
+  Users
+} from 'lucide-react';
 import {
   ApiError,
   fetchPublishedExercise,
@@ -22,10 +36,29 @@ import {
   type PublishedExerciseDetail
 } from '../lib/api';
 import { getCached, isCacheFresh } from '../lib/client-cache';
+import { useAuth } from './auth/AuthProvider';
 import { PageEntrance } from './ui/MotionPrimitives';
 
 interface ExerciseRunnerProps {
   code: string;
+}
+
+const LEGACY_IDENTITY_FIELD_KEYS = new Set<string>([
+  'student_name',
+  'name',
+  'student_school',
+  'school',
+  'student_class',
+  'class_name',
+  'classname',
+  'student_telegram',
+  'telegram',
+  'student_telegram_id'
+]);
+
+function isLegacyIdentityBlock(block: TemplateBlock): boolean {
+  if (block.type !== 'input' || !block.fieldKey) return false;
+  return LEGACY_IDENTITY_FIELD_KEYS.has(block.fieldKey.trim().toLowerCase());
 }
 
 function getStringField(values: BlockFormValues, keys: string[]): string {
@@ -46,6 +79,8 @@ function isTranscriptionMeta(value: unknown): value is TranscriptionMeta {
 
 export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElement {
   const router = useRouter();
+  const { user, approvedInstructors, isLoading: authLoading } = useAuth();
+
   const initialExercise = getCached<PublishedExerciseDetail>(
     PUBLIC_CACHE_KEYS.publishedExercise(code)
   );
@@ -60,8 +95,34 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
   const [submitError, setSubmitError] = useState<{ message: string; isQuota?: boolean } | null>(
     null
   );
+  const [selectedInstructorId, setSelectedInstructorId] = useState<string | null>(null);
+  const [targetInitialized, setTargetInitialized] = useState<boolean>(false);
 
+  // Sync default submission target when approved instructors arrive
   useEffect(() => {
+    if (authLoading) return;
+    if (approvedInstructors.length === 0) {
+      setSelectedInstructorId(null);
+      setTargetInitialized(true);
+      return;
+    }
+    if (!targetInitialized) {
+      setSelectedInstructorId(approvedInstructors[0]?.id ?? null);
+      setTargetInitialized(true);
+      return;
+    }
+    if (
+      selectedInstructorId !== null &&
+      !approvedInstructors.some((inst) => inst.id === selectedInstructorId)
+    ) {
+      setSelectedInstructorId(approvedInstructors[0]?.id ?? null);
+    }
+  }, [approvedInstructors, authLoading, selectedInstructorId, targetInitialized]);
+
+  // Fetch published exercise once authenticated
+  useEffect(() => {
+    if (authLoading || !user) return;
+
     const cacheKey = PUBLIC_CACHE_KEYS.publishedExercise(code);
     const cached = getCached<PublishedExerciseDetail>(cacheKey);
     if (cached) {
@@ -96,7 +157,27 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [authLoading, code, user]);
+
+  const filteredTemplateSchema = useMemo<TemplateConfig | null>(() => {
+    if (!exercise) return null;
+    return {
+      ...exercise.templateSchema,
+      blocks: exercise.templateSchema.blocks.filter((b) => !isLegacyIdentityBlock(b))
+    };
+  }, [exercise]);
+
+  const resolvedInstructorId: string | null = useMemo(() => {
+    if (exercise?.owner?.id) return exercise.owner.id;
+    if (approvedInstructors.length === 0) return null;
+    if (
+      selectedInstructorId &&
+      approvedInstructors.some((inst) => inst.id === selectedInstructorId)
+    ) {
+      return selectedInstructorId;
+    }
+    return null;
+  }, [approvedInstructors, exercise?.owner?.id, selectedInstructorId]);
 
   const setValue = useCallback((fieldKey: string, value: unknown) => {
     setValues((prev) => ({ ...prev, [fieldKey]: value }));
@@ -141,12 +222,12 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
 
   const onTriggerAction: BlockActionHandler = useCallback(
     async ({ block }) => {
-      if (!exercise) return;
+      if (!exercise || !filteredTemplateSchema || !user) return;
       setSubmitError(null);
 
-      // 1. Validate required blocks
+      // 1. Validate required blocks (excluding suppressed legacy student identity inputs)
       const nextErrors: BlockFieldErrors = {};
-      for (const b of exercise.templateSchema.blocks) {
+      for (const b of filteredTemplateSchema.blocks) {
         if (b.required && b.fieldKey) {
           const val = values[b.fieldKey];
           const strVal = typeof val === 'string' ? val.trim() : '';
@@ -175,27 +256,25 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
 
       const fieldMap = evalBlock?.bindings?.inputFieldMap ?? {};
 
-      const studentName = getStringField(values, [
-        fieldMap.studentName ?? '',
-        'student_name',
-        'name'
-      ]);
-      const studentClass = getStringField(values, [
-        fieldMap.studentClass ?? '',
-        'student_class',
-        'class_name',
-        'className'
-      ]);
-      const studentSchool = getStringField(values, [
-        fieldMap.studentSchool ?? '',
-        'student_school',
-        'school'
-      ]);
-      const studentTelegram = getStringField(values, [
-        fieldMap.studentTelegram ?? '',
-        'student_telegram',
-        'telegram'
-      ]);
+      // Resolve student identity from authenticated profile (fallback to any non-suppressed value)
+      const studentName =
+        user.name?.trim() ||
+        getStringField(values, [fieldMap.studentName ?? '', 'student_name', 'name']) ||
+        'Student';
+      const studentClass =
+        user.className?.trim() ||
+        getStringField(values, [
+          fieldMap.studentClass ?? '',
+          'student_class',
+          'class_name',
+          'className'
+        ]);
+      const studentSchool =
+        user.school?.trim() ||
+        getStringField(values, [fieldMap.studentSchool ?? '', 'student_school', 'school']);
+      const studentTelegram =
+        user.telegramId?.trim() ||
+        getStringField(values, [fieldMap.studentTelegram ?? '', 'student_telegram', 'telegram']);
 
       const taskPrompt = getStringField(values, [
         fieldMap.taskPrompt ?? '',
@@ -236,11 +315,12 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
       try {
         const result = await runExerciseEvaluate(code, {
           student: {
-            name: studentName || 'Student',
+            name: studentName,
             ...(studentClass ? { className: studentClass } : {}),
             ...(studentSchool ? { school: studentSchool } : {}),
             ...(studentTelegram ? { telegram: studentTelegram } : {})
           },
+          instructorId: resolvedInstructorId,
           taskPrompt,
           rawText: (studentTextKey ? rawOcrTexts[studentTextKey] : undefined) || studentText,
           finalText: studentText,
@@ -265,8 +345,86 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
         setIsSubmitting(false);
       }
     },
-    [code, exercise, meta, rawOcrTexts, router, values]
+    [
+      code,
+      exercise,
+      filteredTemplateSchema,
+      meta,
+      rawOcrTexts,
+      resolvedInstructorId,
+      router,
+      user,
+      values
+    ]
   );
+
+  // Auth loading state
+  if (authLoading) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
+        <div className="glass-panel-strong flex items-center gap-3 p-6">
+          <Loader2 className="h-5 w-5 animate-spin text-zinc-700" />
+          <span className="text-sm font-medium text-zinc-700">Verifying your account...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Sign-In Gate
+  if (!user) {
+    const nextPath = `/exercises/${encodeURIComponent(code)}`;
+    return (
+      <PageEntrance className="mx-auto max-w-xl px-4 py-14 sm:px-6">
+        <div className="mb-4">
+          <Link
+            href="/exercises"
+            className="glass-btn-secondary !rounded-full !px-3.5 !py-1.5 text-xs"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Exercises
+          </Link>
+        </div>
+
+        <div className="glass-panel-strong relative overflow-hidden p-8 text-center sm:p-10">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-gradient-to-br from-white via-zinc-200/70 to-transparent blur-2xl"
+          />
+          <div className="relative">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-900 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_10px_24px_-8px_rgba(15,17,21,0.45)]">
+              <Lock className="h-6 w-6" />
+            </div>
+            <div className="mt-4 flex justify-center">
+              <span className="glass-pill">Account Required</span>
+            </div>
+            <h1 className="mt-3 text-2xl font-extrabold tracking-tight text-zinc-950">
+              Sign In Required to Start Assessment
+            </h1>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-zinc-600">
+              Your profile automatically attaches your name, school, class, Telegram ID, and
+              instructor submission target to your AI examiner report.
+            </p>
+            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+              <Link
+                href={`/login?next=${encodeURIComponent(nextPath)}`}
+                className="glass-btn-primary"
+              >
+                <LogIn className="h-4 w-4" />
+                Sign In
+              </Link>
+              <Link
+                href={`/register?next=${encodeURIComponent(nextPath)}`}
+                className="glass-btn-secondary"
+              >
+                <UserPlus className="h-4 w-4" />
+                Create Student Account
+              </Link>
+            </div>
+          </div>
+        </div>
+      </PageEntrance>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -279,16 +437,13 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
     );
   }
 
-  if (loadError || !exercise) {
+  if (loadError || !exercise || !filteredTemplateSchema) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
         <div className="rounded-2xl border border-rose-200/80 bg-rose-50/80 p-6 text-rose-900 shadow-glass backdrop-blur-xl">
           <h2 className="text-base font-bold">Unable to load exercise</h2>
           <p className="mt-1 text-sm">{loadError || 'Exercise not found.'}</p>
-          <Link
-            href="/exercises"
-            className="glass-btn-secondary mt-4"
-          >
+          <Link href="/exercises" className="glass-btn-secondary mt-4">
             <ArrowLeft className="h-4 w-4" />
             Back to Exercises
           </Link>
@@ -313,6 +468,8 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
   };
 
   const settings = exercise.templateSchema.settings;
+  const hasMissingProfileInfo =
+    !user.name?.trim() || !user.school?.trim() || !user.className?.trim() || !user.telegramId?.trim();
 
   return (
     <PageEntrance className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
@@ -362,6 +519,138 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
         )}
       </div>
 
+      {/* Auto-Populated Student Identity Card */}
+      <section
+        aria-label="Student identity and submission target"
+        className="glass-panel mb-6 p-5 sm:p-6"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-900/[0.06] pb-3.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
+              <UserCheck className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-bold tracking-tight text-zinc-950">
+                Student Identity Card
+              </h2>
+              <p className="text-xs text-zinc-500">
+                Auto-filled from your account for this submission
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/profile"
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+              hasMissingProfileInfo
+                ? 'border border-amber-300/80 bg-amber-50/85 text-amber-900 hover:bg-amber-100/90'
+                : 'glass-btn-secondary !rounded-full !px-3 !py-1 text-xs'
+            }`}
+          >
+            <Pencil className="h-3 w-3" />
+            {hasMissingProfileInfo ? 'Complete in Profile' : 'Edit in Profile'}
+          </Link>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-white/80 bg-white/60 px-3.5 py-2.5 ring-1 ring-zinc-900/[0.04]">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Student Name
+            </div>
+            <div className="mt-0.5 truncate text-sm font-semibold text-zinc-900">
+              {user.name?.trim() || 'Not set'}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/80 bg-white/60 px-3.5 py-2.5 ring-1 ring-zinc-900/[0.04]">
+            <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              <Building2 className="h-3 w-3" />
+              School
+            </div>
+            <div className="mt-0.5 truncate text-sm font-semibold text-zinc-900">
+              {user.school?.trim() || <span className="font-normal text-zinc-400">Not set</span>}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/80 bg-white/60 px-3.5 py-2.5 ring-1 ring-zinc-900/[0.04]">
+            <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              <GraduationCap className="h-3 w-3" />
+              Class
+            </div>
+            <div className="mt-0.5 truncate text-sm font-semibold text-zinc-900">
+              {user.className?.trim() || <span className="font-normal text-zinc-400">Not set</span>}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/80 bg-white/60 px-3.5 py-2.5 ring-1 ring-zinc-900/[0.04]">
+            <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              <MessageSquare className="h-3 w-3" />
+              Telegram ID
+            </div>
+            <div className="mt-0.5 truncate text-sm font-semibold text-zinc-900">
+              {user.telegramId?.trim() || (
+                <span className="font-normal text-zinc-400">Not set</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Instructor / Submission Target Selector */}
+        <div className="mt-4 flex flex-col gap-2.5 border-t border-zinc-900/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-xs font-semibold text-zinc-600">
+            <Users className="h-4 w-4 text-zinc-500" />
+            <span>Submission Target</span>
+          </div>
+
+          {exercise.owner ? (
+            <span className="glass-pill !px-3 !py-1 text-xs">
+              Instructor: {exercise.owner.name || 'Assigned Instructor'}
+              {exercise.owner.school ? ` · ${exercise.owner.school}` : ''}
+            </span>
+          ) : approvedInstructors.length === 0 ? (
+            <span className="glass-pill !px-3 !py-1 text-xs">
+              Mode: Self-Study (Independent)
+            </span>
+          ) : approvedInstructors.length === 1 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="glass-pill !px-3 !py-1 text-xs">
+                {resolvedInstructorId
+                  ? `Instructor: ${approvedInstructors[0]!.name || 'Instructor'}`
+                  : 'Mode: Self-Study (Independent)'}
+              </span>
+              <select
+                aria-label="Submission target"
+                value={resolvedInstructorId ?? ''}
+                onChange={(e) => setSelectedInstructorId(e.target.value || null)}
+                className="glass-input !w-auto !py-1.5 !text-xs"
+              >
+                <option value={approvedInstructors[0]!.id}>
+                  Submit to {approvedInstructors[0]!.name || 'Instructor'}
+                </option>
+                <option value="">Self-Study (Independent)</option>
+              </select>
+            </div>
+          ) : (
+            <div className="w-full sm:w-72">
+              <select
+                aria-label="Submission target"
+                value={resolvedInstructorId ?? ''}
+                onChange={(e) => setSelectedInstructorId(e.target.value || null)}
+                className="glass-input !py-2 !text-xs"
+              >
+                {approvedInstructors.map((inst) => (
+                  <option key={inst.id} value={inst.id}>
+                    Instructor: {inst.name || 'Instructor'}
+                    {inst.school ? ` (${inst.school})` : ''}
+                  </option>
+                ))}
+                <option value="">Self-Study (Independent)</option>
+              </select>
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* Error Banner */}
       {submitError && (
         <div
@@ -382,8 +671,8 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
         </div>
       )}
 
-      {/* Dynamic Lego Template */}
-      <TemplateRenderer template={exercise.templateSchema} ctx={ctx} />
+      {/* Dynamic Lego Template (legacy identity inputs suppressed) */}
+      <TemplateRenderer template={filteredTemplateSchema} ctx={ctx} />
     </PageEntrance>
   );
 }

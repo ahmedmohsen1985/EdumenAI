@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import '@fontsource-variable/plus-jakarta-sans';
 import './globals.css';
 import { Navbar } from '../components/Navbar';
+import { AuthProvider } from '../components/auth/AuthProvider';
 import { MotionProvider } from '../components/ui/MotionPrimitives';
 
 export const metadata: Metadata = {
@@ -27,14 +28,16 @@ export default function RootLayout({
           <div className="absolute -bottom-48 left-1/3 h-[520px] w-[520px] rounded-full bg-slate-300/30 blur-3xl" />
         </div>
         <MotionProvider>
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <footer className="px-4 pb-6 pt-2 text-center text-xs text-zinc-500 print:hidden">
-            <div className="mx-auto max-w-6xl rounded-full border border-white/70 bg-white/50 px-4 py-2.5 backdrop-blur-xl ring-1 ring-zinc-900/[0.04]">
-              EdumenAI powered by <span className="font-semibold text-zinc-800">EDUMENIA</span> ·
-              Oxford AQA Writing &amp; Assessment Platform
-            </div>
-          </footer>
+          <AuthProvider>
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <footer className="px-4 pb-6 pt-2 text-center text-xs text-zinc-500 print:hidden">
+              <div className="mx-auto max-w-6xl rounded-full border border-white/70 bg-white/50 px-4 py-2.5 backdrop-blur-xl ring-1 ring-zinc-900/[0.04]">
+                EdumenAI powered by <span className="font-semibold text-zinc-800">EDUMENIA</span> ·
+                Oxford AQA Writing &amp; Assessment Platform
+              </div>
+            </footer>
+          </AuthProvider>
         </MotionProvider>
       </body>
     </html>

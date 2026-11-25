@@ -1,4 +1,4 @@
-import { Prisma, type Exercise, type PromptVersion } from '@prisma/client';
+import { Prisma, type Exercise, type PromptVersion, type User } from '@prisma/client';
 import { z } from 'zod';
 import {
   buildMarkingJsonSchema,
@@ -25,6 +25,12 @@ export class HttpError extends Error {
   }
 }
 
+export interface PublishedExerciseOwner {
+  id: string;
+  name: string | null;
+  school: string | null;
+}
+
 export interface PublishedExerciseSummary {
   id: string;
   code: string;
@@ -32,6 +38,8 @@ export interface PublishedExerciseSummary {
   title: string;
   description: string | null;
   totalMarks: number;
+  integrityEnabled: boolean;
+  owner: PublishedExerciseOwner | null;
   activeVersion: {
     id: string;
     version: number;
@@ -53,6 +61,8 @@ export interface PublishedExerciseDetail {
   title: string;
   description: string | null;
   totalMarks: number;
+  integrityEnabled: boolean;
+  owner: PublishedExerciseOwner | null;
   activeVersion: {
     id: string;
     version: number;
@@ -217,10 +227,44 @@ function buildDefaultPromptEntriesForNewExercise(): PromptEntry[] {
   return [];
 }
 
-export async function listPublishedExercises(): Promise<PublishedExerciseSummary[]> {
-  return appCache.getOrSet('exercises:published:list', async () => {
+export async function listPublishedExercises(options?: {
+  viewerUser?: User | null;
+}): Promise<PublishedExerciseSummary[]> {
+  const viewerUser = options?.viewerUser ?? null;
+
+  let scopeKey = 'public';
+  let ownerWhere: Prisma.ExerciseWhereInput = { ownerId: null };
+
+  if (viewerUser) {
+    if (viewerUser.role === 'ADMIN') {
+      scopeKey = 'admin';
+      ownerWhere = {};
+    } else if (viewerUser.role === 'INSTRUCTOR') {
+      scopeKey = `instructor:${viewerUser.id}`;
+      ownerWhere = {
+        OR: [{ ownerId: null }, { ownerId: viewerUser.id }]
+      };
+    } else {
+      const approved = await prisma.studentInstructor.findMany({
+        where: {
+          studentId: viewerUser.id,
+          status: 'APPROVED'
+        },
+        select: { instructorId: true }
+      });
+      const approvedIds = approved.map((row) => row.instructorId).sort();
+      scopeKey = `student:${approvedIds.join(',') || 'none'}`;
+      ownerWhere =
+        approvedIds.length > 0
+          ? { OR: [{ ownerId: null }, { ownerId: { in: approvedIds } }] }
+          : { ownerId: null };
+    }
+  }
+
+  return appCache.getOrSet(`exercises:published:list:${scopeKey}`, async () => {
     const exercises = await prisma.exercise.findMany({
       where: {
+        ...ownerWhere,
         promptVersions: {
           some: {
             status: 'PUBLISHED',
@@ -229,6 +273,13 @@ export async function listPublishedExercises(): Promise<PublishedExerciseSummary
         }
       },
       include: {
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            school: true
+          }
+        },
         promptVersions: {
           where: {
             status: 'PUBLISHED',
@@ -257,6 +308,14 @@ export async function listPublishedExercises(): Promise<PublishedExerciseSummary
           title: ex.title,
           description: ex.description,
           totalMarks: ex.totalMarks,
+          integrityEnabled: ex.integrityEnabled,
+          owner: ex.owner
+            ? {
+                id: ex.owner.id,
+                name: ex.owner.name,
+                school: ex.owner.school
+              }
+            : null,
           activeVersion: {
             id: active.id,
             version: active.version,
@@ -267,11 +326,21 @@ export async function listPublishedExercises(): Promise<PublishedExerciseSummary
   });
 }
 
-export async function getPublishedExerciseByCode(code: string): Promise<PublishedExerciseDetail> {
-  return appCache.getOrSet(`exercises:published:code:${code}`, async () => {
+export async function getPublishedExerciseByCode(
+  code: string,
+  viewerUser?: User | null
+): Promise<PublishedExerciseDetail> {
+  const detail = await appCache.getOrSet(`exercises:published:code:${code}`, async () => {
     const exercise = await prisma.exercise.findUnique({
       where: { code },
       include: {
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            school: true
+          }
+        },
         promptVersions: {
           where: {
             status: 'PUBLISHED',
@@ -305,6 +374,14 @@ export async function getPublishedExerciseByCode(code: string): Promise<Publishe
       title: exercise.title,
       description: exercise.description,
       totalMarks: exercise.totalMarks,
+      integrityEnabled: exercise.integrityEnabled,
+      owner: exercise.owner
+        ? {
+            id: exercise.owner.id,
+            name: exercise.owner.name,
+            school: exercise.owner.school
+          }
+        : null,
       activeVersion: {
         id: active.id,
         version: active.version,
@@ -314,6 +391,47 @@ export async function getPublishedExerciseByCode(code: string): Promise<Publishe
       promptMeta
     };
   });
+
+  if (detail.owner) {
+    if (!viewerUser) {
+      throw new HttpError(
+        401,
+        'Authentication required to access this instructor exercise.',
+        'AUTH_REQUIRED'
+      );
+    }
+
+    const isOwnerOrAdmin =
+      viewerUser.role === 'ADMIN' || detail.owner.id === viewerUser.id;
+    if (!isOwnerOrAdmin) {
+      if (viewerUser.role !== 'STUDENT') {
+        throw new HttpError(
+          403,
+          'You are not authorized to access this instructor exercise.',
+          'FORBIDDEN'
+        );
+      }
+
+      const approved = await prisma.studentInstructor.findFirst({
+        where: {
+          studentId: viewerUser.id,
+          instructorId: detail.owner.id,
+          status: 'APPROVED'
+        },
+        select: { id: true }
+      });
+
+      if (!approved) {
+        throw new HttpError(
+          403,
+          'You must be an approved student of this instructor to access this exercise.',
+          'FORBIDDEN'
+        );
+      }
+    }
+  }
+
+  return detail;
 }
 
 export async function resolveVersionForExecution(

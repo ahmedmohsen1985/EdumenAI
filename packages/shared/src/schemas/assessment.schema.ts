@@ -44,7 +44,8 @@ export const EvaluateRequestSchema = z.object({
   isPreview: z.boolean().optional(),
   formData: z.record(z.unknown()).optional(),
   promptKeys: z.array(z.string()).optional(),
-  telegramTargetIds: z.array(z.string()).optional()
+  telegramTargetIds: z.array(z.string()).optional(),
+  instructorId: z.string().min(1).nullable().optional()
 });
 
 export const EvaluateResponseSchema = z.object({

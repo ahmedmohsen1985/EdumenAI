@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
+import { bootstrapAdminIfConfigured } from '../src/services/auth.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
 
   try {
     await prisma.$queryRaw`SELECT 1`;
+    await bootstrapAdminIfConfigured(prisma);
     const exerciseCount = await prisma.exercise.count();
     console.log(
       `Database connection verified (${exerciseCount} exercise(s) present). EdumenAI is 100% database-driven — manage exercises via Admin Studio (/admin/exercises).`

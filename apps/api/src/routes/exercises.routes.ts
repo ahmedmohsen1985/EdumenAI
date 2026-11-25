@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+import type { User } from '@prisma/client';
 import multer from 'multer';
 import { EvaluateRequestSchema, type StudentInfo } from '@edumenai/shared';
 import {
@@ -9,6 +10,7 @@ import {
 } from '../services/exercise.service.js';
 import { createEvaluatedSubmission } from '../services/submission.service.js';
 import { isAdminAuthorized } from '../middleware/admin-auth.middleware.js';
+import { prisma } from '../lib/prisma.js';
 import { evaluateAssessment, runDynamicOcr } from '../ai-gateway/evaluation.pipeline.js';
 import { AiServiceError } from '../ai-gateway/index.js';
 import {
@@ -110,7 +112,8 @@ function handleRouteAiError(
 
 router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const exercises = await listPublishedExercises();
+    const authUser = res.locals.authUser as User | undefined;
+    const exercises = await listPublishedExercises({ viewerUser: authUser ?? null });
     res.json({
       success: true,
       data: exercises
@@ -123,7 +126,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
 router.get('/:code', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const code = String(req.params.code || '');
-    const exercise = await getPublishedExerciseByCode(code);
+    const authUser = res.locals.authUser as User | undefined;
+    const exercise = await getPublishedExerciseByCode(code, authUser ?? null);
     res.json({
       success: true,
       data: exercise
@@ -156,7 +160,8 @@ router.post(
           ? body.versionId.trim()
           : undefined;
       const isPreview = body.isPreview === true || body.isPreview === 'true';
-      const authorized = isAdminAuthorized(req);
+      const authorized = isAdminAuthorized(req, res);
+      const authUser = res.locals.authUser as User | undefined;
 
       if ((isPreview || versionId) && !authorized) {
         res.status(401).json({
@@ -164,6 +169,25 @@ router.post(
           error: 'Unauthorized: admin access required for preview or draft execution.'
         });
         return;
+      }
+
+      if (!isPreview) {
+        if (!authUser) {
+          res.status(401).json({
+            success: false,
+            code: 'AUTH_REQUIRED',
+            error: 'Authentication is required to run OCR.'
+          });
+          return;
+        }
+        if (authUser.accountStatus !== 'ACTIVE') {
+          res.status(403).json({
+            success: false,
+            code: 'ACCOUNT_NOT_ACTIVE',
+            error: 'Your account is not active.'
+          });
+          return;
+        }
       }
 
       const resolved = await resolveVersionForExecution(code, {
@@ -224,7 +248,8 @@ router.post(
     }
 
     const isPreview = Boolean(parsedBody.isPreview);
-    const authorized = isAdminAuthorized(req);
+    const authorized = isAdminAuthorized(req, res);
+    const authUser = res.locals.authUser as User | undefined;
 
     if (isPreview && !authorized) {
       res.status(401).json({
@@ -234,6 +259,43 @@ router.post(
       return;
     }
 
+    if (!isPreview) {
+      if (!authUser) {
+        res.status(401).json({
+          success: false,
+          code: 'AUTH_REQUIRED',
+          error: 'Authentication is required to submit an assessment.'
+        });
+        return;
+      }
+      if (authUser.accountStatus !== 'ACTIVE') {
+        res.status(403).json({
+          success: false,
+          code: 'ACCOUNT_NOT_ACTIVE',
+          error: 'Your account is not active.'
+        });
+        return;
+      }
+    }
+
+    const resolvedStudent: StudentInfo = authUser
+      ? {
+          name:
+            (authUser.name && authUser.name.trim()) ||
+            parsedBody.student.name ||
+            'Student',
+          ...(authUser.telegramId || parsedBody.student.telegram
+            ? { telegram: authUser.telegramId || parsedBody.student.telegram }
+            : {}),
+          ...(authUser.school || parsedBody.student.school
+            ? { school: authUser.school || parsedBody.student.school }
+            : {}),
+          ...(authUser.className || parsedBody.student.className
+            ? { className: authUser.className || parsedBody.student.className }
+            : {})
+        }
+      : parsedBody.student;
+
     let resolvedExerciseTitle: string | undefined;
 
     try {
@@ -242,6 +304,67 @@ router.post(
         allowDraft: authorized
       });
       resolvedExerciseTitle = resolved.exercise.title;
+
+      let resolvedInstructorId: string | null = null;
+      if (resolved.exercise.ownerId) {
+        const isOwnerOrAdmin =
+          authorized ||
+          authUser?.role === 'ADMIN' ||
+          authUser?.id === resolved.exercise.ownerId;
+        if (!isOwnerOrAdmin) {
+          if (!authUser) {
+            res.status(403).json({
+              success: false,
+              code: 'FORBIDDEN',
+              error: 'You are not authorized to submit to this instructor exercise.'
+            });
+            return;
+          }
+          const approved = await prisma.studentInstructor.findFirst({
+            where: {
+              studentId: authUser.id,
+              instructorId: resolved.exercise.ownerId,
+              status: 'APPROVED'
+            },
+            select: { id: true }
+          });
+          if (!approved) {
+            res.status(403).json({
+              success: false,
+              code: 'FORBIDDEN',
+              error: 'You must be an approved student of this instructor to submit.'
+            });
+            return;
+          }
+        }
+        resolvedInstructorId = resolved.exercise.ownerId;
+      } else if (parsedBody.instructorId) {
+        if (!authUser) {
+          res.status(401).json({
+            success: false,
+            code: 'AUTH_REQUIRED',
+            error: 'Authentication is required to submit to an instructor.'
+          });
+          return;
+        }
+        const approved = await prisma.studentInstructor.findFirst({
+          where: {
+            studentId: authUser.id,
+            instructorId: parsedBody.instructorId,
+            status: 'APPROVED'
+          },
+          select: { id: true }
+        });
+        if (!approved) {
+          res.status(403).json({
+            success: false,
+            code: 'FORBIDDEN',
+            error: 'You are not an approved student of the selected instructor.'
+          });
+          return;
+        }
+        resolvedInstructorId = parsedBody.instructorId;
+      }
 
       const requestedKeys = parsedBody.promptKeys;
       const evalEntries =
@@ -280,7 +403,7 @@ router.post(
       };
 
       const evaluationResult = await evaluateAssessment({
-        studentName: parsedBody.student.name,
+        studentName: resolvedStudent.name,
         taskPrompt: parsedBody.taskPrompt,
         studentText: parsedBody.finalText,
         ...(systemPrompts.length > 0 ? { systemPrompts } : {}),
@@ -291,7 +414,9 @@ router.post(
       const persisted = await createEvaluatedSubmission({
         exerciseId: resolved.exercise.id,
         promptVersionId: resolved.version.id,
-        student: parsedBody.student,
+        studentId: authUser?.id ?? null,
+        instructorId: resolvedInstructorId,
+        student: resolvedStudent,
         taskPrompt: parsedBody.taskPrompt,
         rawText: parsedBody.rawText,
         finalText: parsedBody.finalText,
@@ -304,16 +429,16 @@ router.post(
       if (!isPreview) {
         void (async () => {
           try {
-            if (parsedBody.student.telegram) {
+            if (resolvedStudent.telegram) {
               await notifyStudent(
-                parsedBody.student.telegram,
-                parsedBody.student.name,
+                resolvedStudent.telegram,
+                resolvedStudent.name,
                 evaluationResult.report,
                 resolved.exercise.title
               );
             }
             await sendTeacherAudit(
-              parsedBody.student,
+              resolvedStudent,
               parsedBody.rawText ?? '',
               parsedBody.finalText,
               evaluationResult.report,
@@ -345,7 +470,7 @@ router.post(
           err,
           `Exercise Evaluation (/exercises/${code}/evaluate)`,
           'Evaluation failed.',
-          isPreview ? undefined : parsedBody.student,
+          isPreview ? undefined : resolvedStudent,
           resolvedExerciseTitle
         );
         return;

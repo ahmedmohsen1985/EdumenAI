@@ -1,19 +1,25 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
   Bot,
+  ChevronDown,
   Cpu,
   KeyRound,
   LayoutDashboard,
   Layers,
   Loader2,
   Lock,
+  LogIn,
+  LogOut,
   ShieldAlert,
   ShieldCheck,
-  Unlock
+  Unlock,
+  Users
 } from 'lucide-react';
 import { ApiError } from '../../lib/api';
 import {
@@ -21,7 +27,8 @@ import {
   clearStoredAdminKey,
   setStoredAdminKey
 } from '../../lib/admin-auth';
-import { PageEntrance, SlidingTabButton } from '../ui/MotionPrimitives';
+import { useAuth } from '../auth/AuthProvider';
+import { PageEntrance, SPRING_GENTLE, SlidingTabButton } from '../ui/MotionPrimitives';
 
 type AuthState =
   | { status: 'loading' }
@@ -32,6 +39,7 @@ type AuthState =
 
 const ADMIN_NAV_ITEMS = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
+  { href: '/admin/users', label: 'Users & Approvals', icon: Users, exact: false },
   { href: '/admin/exercises', label: 'Exercises & Builder', icon: Layers, exact: false },
   { href: '/admin/settings/ai', label: 'AI Providers', icon: Cpu, exact: false },
   { href: '/admin/integrations/telegram', label: 'Telegram', icon: Bot, exact: false }
@@ -39,9 +47,14 @@ const ADMIN_NAV_ITEMS = [
 
 export function AdminShell({ children }: { children: React.ReactNode }): React.ReactElement {
   const pathname = usePathname();
+  const { user, isLoading: isAuthLoading, logout } = useAuth();
+  const isSessionAdmin = user?.role === 'ADMIN' && user.accountStatus === 'ACTIVE';
+
   const [authState, setAuthState] = useState<AuthState>({ status: 'loading' });
   const [keyInput, setKeyInput] = useState<string>('');
   const [isUnlocking, setIsUnlocking] = useState<boolean>(false);
+  const [showKeyForm, setShowKeyForm] = useState<boolean>(false);
+  const [isSigningOut, setIsSigningOut] = useState<boolean>(false);
 
   const verifyAuth = useCallback(async (overrideKey?: string) => {
     try {
@@ -83,8 +96,17 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
   }, []);
 
   useEffect(() => {
+    if (isAuthLoading) {
+      setAuthState({ status: 'loading' });
+      return;
+    }
+    if (isSessionAdmin) {
+      setAuthState({ status: 'authenticated', mode: 'session' });
+      return;
+    }
+    setAuthState({ status: 'loading' });
     void verifyAuth();
-  }, [verifyAuth]);
+  }, [verifyAuth, isAuthLoading, isSessionAdmin, user?.id]);
 
   const handleUnlock = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -102,6 +124,17 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
     clearStoredAdminKey();
     setAuthState({ status: 'loading' });
     void verifyAuth('');
+  };
+
+  const handleSignOut = async (): Promise<void> => {
+    setIsSigningOut(true);
+    try {
+      await logout();
+    } catch {
+      // Provider clears the session state regardless; the auth effect re-evaluates access.
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   if (authState.status === 'loading') {
@@ -170,64 +203,115 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
           <div className="border-b border-zinc-200/70 bg-white/60 px-6 py-6">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm">
-                <KeyRound className="h-5 w-5" />
+                <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-zinc-900">Admin Studio Access</h1>
                 <p className="text-xs text-zinc-500">
-                  Enter your platform admin key to continue
+                  Sign in with an administrator account to continue
                 </p>
               </div>
             </div>
           </div>
 
-          <form onSubmit={(e) => void handleUnlock(e)} className="space-y-4 p-6">
+          <div className="space-y-4 p-6">
             {authState.errorMessage && (
-              <div className="rounded-xl border border-rose-200/80 bg-rose-50/80 px-3.5 py-2.5 text-xs font-medium text-rose-700">
+              <div
+                role="alert"
+                className="rounded-xl border border-rose-200/80 bg-rose-50/80 px-3.5 py-2.5 text-xs font-medium text-rose-700"
+              >
                 {authState.errorMessage}
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <label htmlFor="admin-access-key" className="block text-sm font-semibold text-zinc-800">
-                Admin Access Key
-              </label>
-              <input
-                id="admin-access-key"
-                type="password"
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="Enter ADMIN_ACCESS_KEY..."
-                autoComplete="current-password"
-                required
-                className="glass-input"
-              />
-            </div>
+            <Link href="/login?next=/admin" className="glass-btn-primary w-full">
+              <LogIn className="h-4 w-4" />
+              <span>Sign In as Admin</span>
+            </Link>
 
-            <button
-              type="submit"
-              disabled={isUnlocking || !keyInput.trim()}
-              className="glass-btn-primary w-full"
-            >
-              {isUnlocking ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Verifying...</span>
-                </>
-              ) : (
-                <>
-                  <Unlock className="h-4 w-4" />
-                  <span>Unlock Admin Studio</span>
-                </>
-              )}
-            </button>
-          </form>
+            <div className="border-t border-zinc-200/70 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowKeyForm((v) => !v)}
+                aria-expanded={showKeyForm}
+                aria-controls="admin-break-glass-panel"
+                className="flex w-full items-center justify-between gap-2 rounded-xl px-2 py-2 text-left text-sm font-semibold text-zinc-700 transition-colors hover:text-zinc-900 focus:outline-none focus-visible:ring-4 focus-visible:ring-zinc-900/15"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 shrink-0" />
+                  Unlock with Break-Glass Access Key
+                </span>
+                <motion.span
+                  animate={{ rotate: showKeyForm ? 180 : 0 }}
+                  transition={SPRING_GENTLE}
+                  className="inline-flex shrink-0"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </motion.span>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {showKeyForm && (
+                  <motion.div
+                    id="admin-break-glass-panel"
+                    key="break-glass-form"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={SPRING_GENTLE}
+                    className="overflow-hidden"
+                  >
+                    <form onSubmit={(e) => void handleUnlock(e)} className="space-y-4 px-2 pb-1 pt-3">
+                      <div className="space-y-1.5">
+                        <label
+                          htmlFor="admin-access-key"
+                          className="block text-sm font-semibold text-zinc-800"
+                        >
+                          Admin Access Key
+                        </label>
+                        <input
+                          id="admin-access-key"
+                          type="password"
+                          value={keyInput}
+                          onChange={(e) => setKeyInput(e.target.value)}
+                          placeholder="Enter ADMIN_ACCESS_KEY..."
+                          autoComplete="current-password"
+                          required
+                          className="glass-input"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isUnlocking || !keyInput.trim()}
+                        className="glass-btn-secondary w-full"
+                      >
+                        {isUnlocking ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span>Verifying...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="h-4 w-4" />
+                            <span>Unlock Admin Studio</span>
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
       </PageEntrance>
     );
   }
 
   const isOpenDev = authState.mode === 'open_dev';
+  const isSession = authState.mode === 'session';
+  const badgeLabel = isSession ? 'Admin Session' : isOpenDev ? 'Dev Open Mode' : 'Key Active';
 
   return (
     <div className="min-h-[calc(100vh-8rem)]">
@@ -267,18 +351,34 @@ export function AdminShell({ children }: { children: React.ReactNode }): React.R
               }`}
             >
               <ShieldCheck className="h-3.5 w-3.5" />
-              {isOpenDev ? 'Dev Open Mode' : 'Key Active'}
+              {badgeLabel}
             </span>
 
-            {!isOpenDev && (
+            {isSession ? (
               <button
                 type="button"
-                onClick={handleLock}
+                onClick={() => void handleSignOut()}
+                disabled={isSigningOut}
                 className="glass-btn-secondary !rounded-xl !px-3 !py-1.5 !text-xs"
               >
-                <Lock className="h-3.5 w-3.5" />
-                Lock
+                {isSigningOut ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <LogOut className="h-3.5 w-3.5" />
+                )}
+                Sign Out
               </button>
+            ) : (
+              !isOpenDev && (
+                <button
+                  type="button"
+                  onClick={handleLock}
+                  className="glass-btn-secondary !rounded-xl !px-3 !py-1.5 !text-xs"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  Lock
+                </button>
+              )
             )}
           </div>
         </div>

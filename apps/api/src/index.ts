@@ -3,11 +3,16 @@ import { env } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { getAiRuntimeSummary } from './services/ai-settings.service.js';
+import { bootstrapAdminIfConfigured } from './services/auth.service.js';
 
 const app = createApp();
 
 const server = app.listen(env.port, () => {
   logger.info({ port: env.port, nodeEnv: env.nodeEnv }, 'EdumenAI API server started');
+
+  void bootstrapAdminIfConfigured().catch((err: unknown) => {
+    logger.warn({ err }, 'Failed to bootstrap admin account at startup');
+  });
 
   void getAiRuntimeSummary()
     .then((aiSummary) => {

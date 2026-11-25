@@ -1,27 +1,10 @@
 import crypto from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
+import type { User } from '@prisma/client';
 import { env } from '../config/env.js';
+import { extractCookieValue } from './auth.middleware.js';
 
 const ADMIN_COOKIE_NAME = 'edumenai_admin_key';
-
-function extractCookieValue(cookieHeader: string | undefined, name: string): string {
-  if (!cookieHeader) return '';
-  const pairs = cookieHeader.split(';');
-  for (const pair of pairs) {
-    const idx = pair.indexOf('=');
-    if (idx === -1) continue;
-    const key = pair.slice(0, idx).trim();
-    if (key === name) {
-      const val = pair.slice(idx + 1).trim();
-      try {
-        return decodeURIComponent(val);
-      } catch {
-        return val;
-      }
-    }
-  }
-  return '';
-}
 
 function extractPresentedAdminKey(req: Request): string {
   const headerKey = req.header('x-admin-key');
@@ -44,22 +27,60 @@ function sha256Digest(value: string): Buffer {
   return crypto.createHash('sha256').update(value, 'utf8').digest();
 }
 
-export function isAdminAuthorized(req: Request): boolean {
+function hasValidPresentedAdminKey(req: Request): boolean {
   const configuredKey = env.adminAccessKey.trim();
-  if (!configuredKey) {
-    return env.nodeEnv !== 'production';
-  }
+  if (!configuredKey) return false;
 
   const presented = extractPresentedAdminKey(req);
-  if (!presented) {
-    return false;
-  }
+  if (!presented) return false;
 
   return crypto.timingSafeEqual(sha256Digest(presented), sha256Digest(configuredKey));
 }
 
-export function adminAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+export function isAdminAuthorized(req: Request, res?: Response): boolean {
+  const authUser = res?.locals.authUser as User | undefined;
+  if (authUser?.role === 'ADMIN' && authUser.accountStatus === 'ACTIVE') {
+    return true;
+  }
+
   const configuredKey = env.adminAccessKey.trim();
+  if (authUser) {
+    // Non-admin (or inactive admin) users must never inherit open_dev bypass; require explicit key.
+    return Boolean(configuredKey) && hasValidPresentedAdminKey(req);
+  }
+
+  if (!configuredKey) {
+    return env.nodeEnv !== 'production';
+  }
+
+  return hasValidPresentedAdminKey(req);
+}
+
+export function adminAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const authUser = res.locals.authUser as User | undefined;
+
+  if (authUser?.role === 'ADMIN' && authUser.accountStatus === 'ACTIVE') {
+    res.locals.adminAuthMode = 'session';
+    next();
+    return;
+  }
+
+  const configuredKey = env.adminAccessKey.trim();
+
+  if (authUser) {
+    if (configuredKey && hasValidPresentedAdminKey(req)) {
+      res.locals.adminAuthMode = 'key';
+      next();
+      return;
+    }
+
+    res.status(403).json({
+      success: false,
+      code: 'FORBIDDEN',
+      error: 'Administrator privileges are required.'
+    });
+    return;
+  }
 
   if (!configuredKey) {
     if (env.nodeEnv === 'production') {
@@ -76,7 +97,7 @@ export function adminAuthMiddleware(req: Request, res: Response, next: NextFunct
     return;
   }
 
-  if (!isAdminAuthorized(req)) {
+  if (!hasValidPresentedAdminKey(req)) {
     res.status(401).json({
       success: false,
       code: 'UNAUTHORIZED',

@@ -8,21 +8,62 @@ datasource db {
 }
 
 model User {
-  id              String             @id @default(cuid())
-  email           String?            @unique
-  name            String?
-  role            UserRole           @default(STUDENT)
-  telegramId      String?            @unique
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  submissions     Submission[]
-  providerConfigs AIProviderConfig[]
+  id                    String               @id @default(cuid())
+  email                 String?              @unique
+  passwordHash          String?
+  name                  String?
+  role                  UserRole             @default(STUDENT)
+  accountStatus         AccountStatus        @default(ACTIVE)
+  telegramId            String?
+  school                String?
+  className             String?
+  parentPhone           String?
+  parentTelegramId      String?
+  bio                   String?              @db.Text
+  creditBalance         Int                  @default(0)
+  sponsorStudentCredits Boolean              @default(false)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  submissions           Submission[]
+  instructorSubmissions Submission[]         @relation("InstructorSubmissions")
+  providerConfigs       AIProviderConfig[]
+  sessions              Session[]
+  passwordResetTokens   PasswordResetToken[]
+  studentEnrollments    StudentInstructor[]  @relation("StudentEnrollments")
+  instructorEnrollments StudentInstructor[]  @relation("InstructorEnrollments")
+  notifications         Notification[]
+  ownedExercises        Exercise[]           @relation("ExerciseOwner")
+  telegramTargets       TelegramTarget[]     @relation("TelegramTargetOwner")
+
+  @@index([telegramId])
+  @@index([role, accountStatus])
 }
 
 enum UserRole {
   STUDENT
   INSTRUCTOR
   ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  PENDING_APPROVAL
+  SUSPENDED
+}
+
+enum EnrollmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  ENROLLMENT_REQUEST
+  ENROLLMENT_APPROVED
+  ENROLLMENT_REJECTED
+  INSTRUCTOR_PENDING_APPROVAL
+  INSTRUCTOR_APPROVED
+  SYSTEM
 }
 
 enum ExerciseSkill {
@@ -36,6 +77,66 @@ enum VersionStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model StudentInstructor {
+  id           String           @id @default(cuid())
+  studentId    String
+  student      User             @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: Cascade)
+  instructorId String
+  instructor   User             @relation("InstructorEnrollments", fields: [instructorId], references: [id], onDelete: Cascade)
+  status       EnrollmentStatus @default(PENDING)
+  note         String?
+  requestedAt  DateTime         @default(now())
+  respondedAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([studentId, instructorId])
+  @@index([instructorId, status])
+  @@index([studentId, status])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType @default(SYSTEM)
+  title     String
+  body      String           @db.Text
+  link      String?
+  metadata  Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead, createdAt])
 }
 
 model AIProviderConfig {
@@ -79,6 +180,8 @@ model TelegramConfig {
 
 model TelegramTarget {
   id          String   @id @default(cuid())
+  ownerId     String?
+  owner       User?    @relation("TelegramTargetOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   name        String
   chatId      String
   description String?
@@ -88,19 +191,25 @@ model TelegramTarget {
   updatedAt   DateTime @updatedAt
 
   @@index([isActive, isDefault])
+  @@index([ownerId, isActive])
 }
 
 model Exercise {
-  id             String          @id @default(cuid())
-  code           String          @unique // "ex4"
-  skill          ExerciseSkill   @default(WRITING)
-  title          String
-  description    String?
-  totalMarks     Int
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @default(now()) @updatedAt
-  promptVersions PromptVersion[]
-  submissions    Submission[]
+  id               String          @id @default(cuid())
+  ownerId          String?
+  owner            User?           @relation("ExerciseOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  code             String          @unique // "ex4"
+  skill            ExerciseSkill   @default(WRITING)
+  title            String
+  description      String?
+  totalMarks       Int
+  integrityEnabled Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @default(now()) @updatedAt
+  promptVersions   PromptVersion[]
+  submissions      Submission[]
+
+  @@index([ownerId])
 }
 
 model PromptVersion {
@@ -127,29 +236,33 @@ model PromptVersion {
 }
 
 model Submission {
-  id                String           @id @default(cuid())
+  id                String            @id @default(cuid())
   exerciseId        String
-  exercise          Exercise         @relation(fields: [exerciseId], references: [id])
+  exercise          Exercise          @relation(fields: [exerciseId], references: [id])
   promptVersionId   String
-  promptVersion     PromptVersion    @relation(fields: [promptVersionId], references: [id])
+  promptVersion     PromptVersion     @relation(fields: [promptVersionId], references: [id])
   studentId         String?
-  student           User?            @relation(fields: [studentId], references: [id])
+  student           User?             @relation(fields: [studentId], references: [id])
+  instructorId      String?
+  instructor        User?             @relation("InstructorSubmissions", fields: [instructorId], references: [id], onDelete: SetNull)
   studentName       String
   studentClass      String?
   studentSchool     String?
-  taskPrompt        String           @db.Text
-  rawText           String?          @db.Text
-  finalText         String           @db.Text
+  taskPrompt        String            @db.Text
+  rawText           String?           @db.Text
+  finalText         String            @db.Text
   transcriptionMeta Json? // pages_detected, writer_handwriting_profile, genuine_spelling_errors
-  isPreview         Boolean          @default(false)
+  isPreview         Boolean           @default(false)
   formData          Json?
-  status            SubmissionStatus @default(PENDING)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  integrityLog      Json?
+  status            SubmissionStatus  @default(PENDING)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
   report            EvaluationReport?
 
   @@index([exerciseId, createdAt])
   @@index([studentId])
+  @@index([instructorId, createdAt])
   @@index([isPreview, createdAt])
 }
 
@@ -161,8 +274,8 @@ enum SubmissionStatus {
 }
 
 model EvaluationReport {
-  id               String   @id @default(cuid())
-  submissionId     String   @unique
+  id               String     @id @default(cuid())
+  submissionId     String     @unique
   submission       Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   marksContent     Int
   marksContentMax  Int
@@ -173,12 +286,12 @@ model EvaluationReport {
   justification    Json
   errors           Json
   contentFeedback  Json
-  correctedVersion String   @db.Text
+  correctedVersion String     @db.Text
   provider         String
   model            String
   promptTokens     Int?
   completionTokens Int?
   totalTokens      Int?
   latencyMs        Int?
-  createdAt        DateTime @default(now())
+  createdAt        DateTime   @default(now())
 }

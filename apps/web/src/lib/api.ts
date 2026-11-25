@@ -1,5 +1,19 @@
-import type {
+﻿import type {
+  AdminUserView,
   AiTaskType,
+  AuthUserView,
+  ChangePasswordRequest,
+  CreateUserAdminRequest,
+  EnrollmentView,
+  NotificationView,
+  PublicInstructorView,
+  RegisterRequest,
+  RequestEnrollmentRequest,
+  RespondEnrollmentRequest,
+  UpdateProfileRequest,
+  UpdateUserAdminRequest,
+  UserRole,
+  AccountStatus,
   EvaluatePersistedResponse,
   EvaluateRequest,
   ExerciseSkill,
@@ -8,7 +22,8 @@ import type {
   TemplateConfig,
   TranscriptionMeta
 } from '@edumenai/shared';
-import { fetchWithCache } from './client-cache';
+import { fetchWithCache, invalidateCache } from './client-cache';
+import { getAdminAuthHeaders } from './admin-auth';
 
 /**
  * Runtime API client for browser and server-side calls.
@@ -90,6 +105,7 @@ export async function apiFetch<T>(
   try {
     res = await fetch(getApiUrl(path), {
       ...fetchOptions,
+      credentials: fetchOptions.credentials ?? 'include',
       signal: controller.signal,
       headers: {
         ...(fetchOptions.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
@@ -151,6 +167,8 @@ export interface PublishedExerciseSummary {
     version: number;
     publishedAt: string | null;
   };
+  owner?: { id: string; name: string | null; school: string | null } | null;
+  integrityEnabled?: boolean;
 }
 
 export interface PublishedExerciseDetail extends PublishedExerciseSummary {
@@ -323,4 +341,255 @@ export async function sendReportToTelegram(
     }
   );
   return res.data;
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*  Auth, Profiles, Enrollments, Notifications & Admin Users                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Accepts both bare payloads (`{ user }`) and `{ success: true, data }`
+ * envelopes so the client works with either backend response style.
+ */
+function unwrapData<T>(res: unknown): T {
+  if (
+    typeof res === 'object' &&
+    res !== null &&
+    'success' in res &&
+    'data' in res &&
+    (res as { success: unknown }).success === true
+  ) {
+    return (res as { data: T }).data;
+  }
+  return res as T;
+}
+
+/** Exercise visibility depends on the session, so drop cached public lists. */
+export function invalidatePublishedExerciseCache(): void {
+  invalidateCache('pub:');
+}
+
+export interface AuthSessionPayload {
+  user: AuthUserView | null;
+  approvedInstructors: PublicInstructorView[];
+  pendingInstructorCount: number;
+  unreadNotificationCount: number;
+}
+
+export interface NotificationsPayload {
+  items: NotificationView[];
+  unreadCount: number;
+}
+
+export interface AdminUsersQuery {
+  role?: UserRole | '';
+  accountStatus?: AccountStatus | '';
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AdminUsersPayload {
+  items: AdminUserView[];
+  total: number;
+}
+
+export async function fetchAuthSession(): Promise<AuthSessionPayload> {
+  const res = await apiFetch<unknown>('/api/auth/me');
+  const data = unwrapData<Partial<AuthSessionPayload>>(res);
+  return {
+    user: data.user ?? null,
+    approvedInstructors: data.approvedInstructors ?? [],
+    pendingInstructorCount: data.pendingInstructorCount ?? 0,
+    unreadNotificationCount: data.unreadNotificationCount ?? 0
+  };
+}
+
+export async function fetchPublicInstructors(): Promise<PublicInstructorView[]> {
+  const res = await apiFetch<unknown>('/api/auth/instructors');
+  return unwrapData<PublicInstructorView[]>(res);
+}
+
+export async function registerAccount(payload: RegisterRequest): Promise<AuthUserView> {
+  const res = await apiFetch<unknown>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  invalidatePublishedExerciseCache();
+  invalidateCache('admin:');
+  return unwrapData<{ user: AuthUserView }>(res).user;
+}
+
+export async function loginAccount(payload: {
+  email: string;
+  password: string;
+}): Promise<AuthUserView> {
+  const res = await apiFetch<unknown>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  invalidatePublishedExerciseCache();
+  invalidateCache('admin:');
+  return unwrapData<{ user: AuthUserView }>(res).user;
+}
+
+export async function logoutAccount(): Promise<void> {
+  try {
+    await apiFetch<unknown>('/api/auth/logout', { method: 'POST', body: JSON.stringify({}) });
+  } finally {
+    invalidatePublishedExerciseCache();
+    invalidateCache('admin:');
+  }
+}
+
+export async function requestPasswordReset(email: string): Promise<string> {
+  const res = await apiFetch<unknown>('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email })
+  });
+  return unwrapData<{ message?: string }>(res).message ?? '';
+}
+
+export async function resetPassword(payload: {
+  token: string;
+  password: string;
+}): Promise<string> {
+  const res = await apiFetch<unknown>('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  return unwrapData<{ message?: string }>(res).message ?? '';
+}
+
+export async function updateMyProfile(payload: UpdateProfileRequest): Promise<AuthUserView> {
+  const res = await apiFetch<unknown>('/api/auth/profile', {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+  invalidatePublishedExerciseCache();
+  return unwrapData<{ user: AuthUserView }>(res).user;
+}
+
+export async function changeMyPassword(payload: ChangePasswordRequest): Promise<void> {
+  await apiFetch<unknown>('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function fetchMyEnrollments(): Promise<EnrollmentView[]> {
+  const res = await apiFetch<unknown>('/api/enrollments/my');
+  return unwrapData<EnrollmentView[]>(res);
+}
+
+export async function requestEnrollment(
+  payload: RequestEnrollmentRequest
+): Promise<EnrollmentView> {
+  const res = await apiFetch<unknown>('/api/enrollments/request', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  invalidatePublishedExerciseCache();
+  return unwrapData<EnrollmentView>(res);
+}
+
+export async function respondToEnrollment(
+  id: string,
+  payload: RespondEnrollmentRequest
+): Promise<EnrollmentView> {
+  const res = await apiFetch<unknown>(`/api/enrollments/${encodeURIComponent(id)}/respond`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+  invalidatePublishedExerciseCache();
+  return unwrapData<EnrollmentView>(res);
+}
+
+export async function deleteEnrollment(id: string): Promise<void> {
+  await apiFetch<unknown>(`/api/enrollments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidatePublishedExerciseCache();
+}
+
+export async function fetchNotifications(): Promise<NotificationsPayload> {
+  const res = await apiFetch<unknown>('/api/notifications');
+  const data = unwrapData<Partial<NotificationsPayload>>(res);
+  return { items: data.items ?? [], unreadCount: data.unreadCount ?? 0 };
+}
+
+export async function markNotificationRead(id: string): Promise<NotificationView> {
+  const res = await apiFetch<unknown>(`/api/notifications/${encodeURIComponent(id)}/read`, {
+    method: 'PATCH',
+    body: JSON.stringify({})
+  });
+  return unwrapData<NotificationView>(res);
+}
+
+export async function markAllNotificationsRead(): Promise<number> {
+  const res = await apiFetch<unknown>('/api/notifications/read-all', {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+  return unwrapData<{ updated?: number }>(res).updated ?? 0;
+}
+
+/** Admin endpoints: session cookie (credentials) AND/OR break-glass key header. */
+function adminHeaders(): Record<string, string> {
+  return getAdminAuthHeaders();
+}
+
+export async function fetchAdminUsers(query: AdminUsersQuery = {}): Promise<AdminUsersPayload> {
+  const search = new URLSearchParams();
+  if (query.role) search.set('role', query.role);
+  if (query.accountStatus) search.set('accountStatus', query.accountStatus);
+  if (query.search?.trim()) search.set('search', query.search.trim());
+  if (query.limit !== undefined) search.set('limit', String(query.limit));
+  if (query.offset !== undefined) search.set('offset', String(query.offset));
+  const qs = search.toString();
+  const res = await apiFetch<unknown>(qs ? `/api/admin/users?${qs}` : '/api/admin/users', {
+    headers: adminHeaders()
+  });
+  const data = unwrapData<Partial<AdminUsersPayload>>(res);
+  return { items: data.items ?? [], total: data.total ?? 0 };
+}
+
+export async function createAdminUser(payload: CreateUserAdminRequest): Promise<AdminUserView> {
+  const res = await apiFetch<unknown>('/api/admin/users', {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return unwrapData<AdminUserView>(res);
+}
+
+export async function updateAdminUser(
+  id: string,
+  payload: UpdateUserAdminRequest
+): Promise<AdminUserView> {
+  const res = await apiFetch<unknown>(`/api/admin/users/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: adminHeaders(),
+    body: JSON.stringify(payload)
+  });
+  invalidatePublishedExerciseCache();
+  return unwrapData<AdminUserView>(res);
+}
+
+export async function generateAdminUserResetLink(
+  id: string
+): Promise<{ resetUrl: string; expiresAt: string }> {
+  const res = await apiFetch<unknown>(`/api/admin/users/${encodeURIComponent(id)}/reset-link`, {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify({})
+  });
+  return unwrapData<{ resetUrl: string; expiresAt: string }>(res);
+}
+
+export async function deleteAdminUser(id: string): Promise<void> {
+  await apiFetch<unknown>(`/api/admin/users/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: adminHeaders()
+  });
+  invalidatePublishedExerciseCache();
 }

@@ -8,14 +8,18 @@ import { env } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { AiServiceError } from './ai-gateway/index.js';
 import { HttpError } from './services/exercise.service.js';
+import { attachAuthMiddleware } from './middleware/auth.middleware.js';
 import healthRoutes from './routes/health.routes.js';
+import authRoutes from './routes/auth.routes.js';
+import enrollmentsRoutes from './routes/enrollments.routes.js';
+import notificationsRoutes from './routes/notifications.routes.js';
 import exercisesRoutes from './routes/exercises.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 
 function resolveCorsOptions(): cors.CorsOptions {
   if (!env.corsOrigin || env.corsOrigin === '*') {
-    return { origin: '*' };
+    return { origin: true, credentials: true };
   }
   const origins = env.corsOrigin
     .split(',')
@@ -30,13 +34,18 @@ function resolveCorsOptions(): cors.CorsOptions {
 export function createApp(): Express {
   const app = express();
 
+  app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors(resolveCorsOptions()));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(attachAuthMiddleware);
 
   // Routes
   app.use('/', healthRoutes);
+  app.use('/api/auth', authRoutes);
+  app.use('/api/enrollments', enrollmentsRoutes);
+  app.use('/api/notifications', notificationsRoutes);
   app.use('/api/exercises', exercisesRoutes);
   app.use('/api/reports', reportsRoutes);
   app.use('/api/admin', adminRoutes);

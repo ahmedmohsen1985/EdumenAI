@@ -394,6 +394,15 @@ export function LivePreviewPane({
         </div>
       )}
 
+      {/* Auto Student Profile Card (read-only preview strip) */}
+      <div className="glass-panel flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-xs text-zinc-600">
+        <span className="glass-pill">Auto Student Profile Card</span>
+        <span>
+          Student Name, School, Instructor/Self-Study &amp; Telegram ID are auto-filled from the
+          student&apos;s account at runtime — legacy identity inputs are hidden.
+        </span>
+      </div>
+
       {/* Real Lego Runtime */}
       <TemplateRenderer template={templateSchema} ctx={ctx} />
     </div>

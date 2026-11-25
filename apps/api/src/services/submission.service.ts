@@ -27,6 +27,8 @@ export interface PipelineEvaluationResult {
 export interface CreateEvaluatedSubmissionParams {
   exerciseId: string;
   promptVersionId: string;
+  studentId?: string | null;
+  instructorId?: string | null;
   student: StudentInfo;
   taskPrompt: string;
   rawText?: string;
@@ -133,6 +135,8 @@ export async function createEvaluatedSubmission(
       data: {
         exerciseId: params.exerciseId,
         promptVersionId: params.promptVersionId,
+        studentId: params.studentId ?? null,
+        instructorId: params.instructorId ?? null,
         studentName: params.student.name,
         studentClass: params.student.className ?? null,
         studentSchool: params.student.school ?? null,

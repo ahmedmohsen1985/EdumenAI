@@ -15,7 +15,16 @@ const EnvSchema = z.object({
   adminAccessKey: z.string().default(''),
   appEncryptionKey: z.string().default(''),
   corsOrigin: z.string().default('*'),
-  cacheTtlSeconds: z.coerce.number().int().nonnegative().default(86400)
+  cacheTtlSeconds: z.coerce.number().int().nonnegative().default(86400),
+  appBaseUrl: z.string().default('http://localhost:3000'),
+  mailProvider: z.enum(['console', 'resend']).default('console'),
+  mailFrom: z.string().default('EdumenAI <no-reply@edumenai.local>'),
+  resendApiKey: z.string().default(''),
+  cookieSameSite: z.enum(['lax', 'none', 'strict']).default('lax'),
+  cookieDomain: z.string().default(''),
+  adminBootstrapEmail: z.string().default(''),
+  adminBootstrapPassword: z.string().default(''),
+  adminBootstrapName: z.string().default('Platform Admin')
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;
@@ -28,5 +37,14 @@ export const env: AppEnv = EnvSchema.parse({
   adminAccessKey: process.env.ADMIN_ACCESS_KEY || '',
   appEncryptionKey: process.env.APP_ENCRYPTION_KEY || '',
   corsOrigin: process.env.CORS_ORIGIN || '*',
-  cacheTtlSeconds: process.env.CACHE_TTL_SECONDS || 86400
+  cacheTtlSeconds: process.env.CACHE_TTL_SECONDS || 86400,
+  appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
+  mailProvider: process.env.MAIL_PROVIDER || 'console',
+  mailFrom: process.env.MAIL_FROM || 'EdumenAI <no-reply@edumenai.local>',
+  resendApiKey: process.env.RESEND_API_KEY || '',
+  cookieSameSite: process.env.COOKIE_SAME_SITE || 'lax',
+  cookieDomain: process.env.COOKIE_DOMAIN || '',
+  adminBootstrapEmail: process.env.ADMIN_BOOTSTRAP_EMAIL || '',
+  adminBootstrapPassword: process.env.ADMIN_BOOTSTRAP_PASSWORD || '',
+  adminBootstrapName: process.env.ADMIN_BOOTSTRAP_NAME || 'Platform Admin'
 });

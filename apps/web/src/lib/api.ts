@@ -201,6 +201,12 @@ export interface TelegramDispatchResult {
   student: {
     ok: boolean;
     error?: string;
+    description?: string;
+  } | null;
+  parent?: {
+    ok?: boolean;
+    error?: string;
+    description?: string;
   } | null;
 }
 
@@ -293,11 +299,17 @@ export async function runExerciseEvaluate(
 
 export async function fetchReports(params?: {
   exerciseCode?: string;
+  studentId?: string;
+  instructorId?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 }): Promise<ListReportsResponse['data']> {
   const search = new URLSearchParams();
   if (params?.exerciseCode) search.set('exerciseCode', params.exerciseCode);
+  if (params?.studentId) search.set('studentId', params.studentId);
+  if (params?.instructorId) search.set('instructorId', params.instructorId);
+  if (params?.search?.trim()) search.set('search', params.search.trim());
   if (params?.limit !== undefined) search.set('limit', String(params.limit));
   if (params?.offset !== undefined) search.set('offset', String(params.offset));
   const query = search.toString();
@@ -418,6 +430,7 @@ export async function registerAccount(payload: RegisterRequest): Promise<AuthUse
   });
   invalidatePublishedExerciseCache();
   invalidateCache('admin:');
+  invalidateCache('inst:');
   return unwrapData<{ user: AuthUserView }>(res).user;
 }
 
@@ -431,6 +444,7 @@ export async function loginAccount(payload: {
   });
   invalidatePublishedExerciseCache();
   invalidateCache('admin:');
+  invalidateCache('inst:');
   return unwrapData<{ user: AuthUserView }>(res).user;
 }
 
@@ -440,6 +454,7 @@ export async function logoutAccount(): Promise<void> {
   } finally {
     invalidatePublishedExerciseCache();
     invalidateCache('admin:');
+    invalidateCache('inst:');
   }
 }
 

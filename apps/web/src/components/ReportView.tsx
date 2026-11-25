@@ -14,8 +14,13 @@ import {
   Printer,
   Send
 } from 'lucide-react';
-import { fetchReportById, sendReportToTelegram } from '../lib/api';
+import {
+  fetchReportById,
+  sendReportToTelegram,
+  type TelegramDispatchResult
+} from '../lib/api';
 import { generateReportPdf } from '../lib/pdf';
+import { useAuth } from './auth/AuthProvider';
 import { HighlightedText } from './HighlightedText';
 import { PageEntrance, SPRING_GENTLE, SPRING_SNAPPY } from './ui/MotionPrimitives';
 
@@ -23,7 +28,52 @@ interface ReportViewProps {
   reportId: string;
 }
 
+function buildDispatchStatus(
+  result: TelegramDispatchResult,
+  automatic: boolean
+): { ok: boolean; message: string } {
+  const deliveredTargets = result.targets.filter((t) => t.ok).length;
+  const totalTargets = result.targets.length;
+  const studentOk = Boolean(result.student?.ok);
+  const parentOk = Boolean(result.parent?.ok);
+
+  const recipients: string[] = [];
+  if (totalTargets > 0) {
+    recipients.push(`${deliveredTargets}/${totalTargets} teacher/class group(s)`);
+  }
+  if (studentOk) recipients.push('student');
+  if (parentOk) recipients.push('parent');
+
+  const anyDelivered = deliveredTargets > 0 || studentOk || parentOk;
+  if (!anyDelivered) {
+    if (totalTargets > 0 || result.student || result.parent) {
+      return {
+        ok: false,
+        message:
+          result.targets[0]?.error ||
+          result.student?.error ||
+          result.parent?.error ||
+          result.parent?.description ||
+          'Telegram PDF delivery did not succeed for any configured recipients.'
+      };
+    }
+    return {
+      ok: true,
+      message: automatic
+        ? 'Report saved. No Telegram recipients were configured for automatic PDF delivery.'
+        : 'No Telegram recipients are configured for this report.'
+    };
+  }
+
+  const prefix = automatic ? 'PDF report automatically dispatched to' : 'PDF report dispatched to';
+  return {
+    ok: true,
+    message: `${prefix} ${recipients.join(', ')}.`
+  };
+}
+
 export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
+  const { user } = useAuth();
   const [report, setReport] = useState<PersistedReport | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -57,6 +107,57 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
     };
   }, [reportId]);
 
+  // Automatic PDF dispatch when arriving from ExerciseRunner (?autoDispatch=1)
+  useEffect(() => {
+    if (!report || report.isPreview || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autoDispatch') !== '1') return;
+
+    const storageKey = `edumenai_pdf_dispatched_${report.id}`;
+    try {
+      if (window.sessionStorage.getItem(storageKey)) return;
+      window.sessionStorage.setItem(storageKey, '1');
+    } catch {
+      // Proceed even if sessionStorage is unavailable
+    }
+
+    let cancelled = false;
+    setIsSendingTelegram(true);
+    setTelegramStatus(null);
+
+    const runAutoDispatch = async (): Promise<void> => {
+      try {
+        const { blob, fileName } = generateReportPdf(report);
+        const result = await sendReportToTelegram(report.id, {
+          pdfBlob: blob,
+          fileName
+        });
+        if (!cancelled) {
+          setTelegramStatus(buildDispatchStatus(result, true));
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setTelegramStatus({
+            ok: false,
+            message:
+              err instanceof Error
+                ? `Automatic Telegram PDF dispatch failed: ${err.message}`
+                : 'Automatic Telegram PDF dispatch failed.'
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSendingTelegram(false);
+        }
+      }
+    };
+
+    void runAutoDispatch();
+    return () => {
+      cancelled = true;
+    };
+  }, [report]);
+
   const handleDownloadPdf = (): void => {
     if (!report) return;
     const { doc, fileName } = generateReportPdf(report);
@@ -77,26 +178,7 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
         pdfBlob: blob,
         fileName
       });
-
-      const deliveredTargets = result.targets.filter((t) => t.ok).length;
-      const totalTargets = result.targets.length;
-      const studentOk = result.student?.ok;
-
-      if (deliveredTargets === 0 && !studentOk && totalTargets > 0) {
-        setTelegramStatus({
-          ok: false,
-          message:
-            result.targets[0]?.error ||
-            'Telegram delivery did not succeed for any configured targets.'
-        });
-      } else {
-        setTelegramStatus({
-          ok: true,
-          message: `Report dispatched to ${deliveredTargets}/${totalTargets} Telegram target(s)${
-            studentOk ? ' and student' : ''
-          }.`
-        });
-      }
+      setTelegramStatus(buildDispatchStatus(result, false));
     } catch (err: unknown) {
       setTelegramStatus({
         ok: false,
@@ -177,7 +259,11 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
           </Link>
           {report.isPreview && (
             <Link
-              href={`/admin/exercises/${encodeURIComponent(report.exerciseCode)}/builder`}
+              href={
+                user?.role === 'INSTRUCTOR'
+                  ? `/instructor/exercises/${encodeURIComponent(report.exerciseCode)}/builder`
+                  : `/admin/exercises/${encodeURIComponent(report.exerciseCode)}/builder`
+              }
               className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-amber-50/85 px-3.5 py-1.5 text-xs font-semibold text-amber-900 backdrop-blur-md transition-colors duration-200 hover:bg-amber-100"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -214,6 +300,15 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
       </div>
 
       {/* Telegram Status Banner */}
+      {isSendingTelegram && !telegramStatus && (
+        <div
+          role="status"
+          className="glass-panel flex items-center gap-2.5 px-4 py-3 text-sm text-zinc-700 print:hidden"
+        >
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-600" />
+          <span>Dispatching PDF report to Telegram recipients (teacher group, student &amp; parent)...</span>
+        </div>
+      )}
       {telegramStatus && (
         <div
           role="status"

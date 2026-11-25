@@ -14,6 +14,7 @@ import { prisma } from '../lib/prisma.js';
 import { evaluateAssessment, runDynamicOcr } from '../ai-gateway/evaluation.pipeline.js';
 import { AiServiceError } from '../ai-gateway/index.js';
 import {
+  notifyParent,
   notifyStudent,
   sendTeacherAudit,
   sendTeacherError,
@@ -162,13 +163,26 @@ router.post(
       const isPreview = body.isPreview === true || body.isPreview === 'true';
       const authorized = isAdminAuthorized(req, res);
       const authUser = res.locals.authUser as User | undefined;
+      const isActiveInstructor = Boolean(
+        authUser && authUser.role === 'INSTRUCTOR' && authUser.accountStatus === 'ACTIVE'
+      );
 
-      if ((isPreview || versionId) && !authorized) {
-        res.status(401).json({
-          success: false,
-          error: 'Unauthorized: admin access required for preview or draft execution.'
-        });
-        return;
+      if (isPreview || versionId) {
+        if (!authorized && !authUser) {
+          res.status(401).json({
+            success: false,
+            error: 'Unauthorized: admin or instructor access required for preview or draft execution.'
+          });
+          return;
+        }
+        if (!authorized && !isActiveInstructor) {
+          res.status(403).json({
+            success: false,
+            code: 'FORBIDDEN',
+            error: 'Only administrators or active instructors can preview or run draft versions.'
+          });
+          return;
+        }
       }
 
       if (!isPreview) {
@@ -192,8 +206,17 @@ router.post(
 
       const resolved = await resolveVersionForExecution(code, {
         versionId,
-        allowDraft: authorized
+        allowDraft: Boolean(authorized || isActiveInstructor)
       });
+
+      if ((isPreview || versionId) && !authorized && resolved.exercise.ownerId !== authUser?.id) {
+        res.status(403).json({
+          success: false,
+          code: 'FORBIDDEN',
+          error: 'You can only preview or run drafts for exercises you own.'
+        });
+        return;
+      }
 
       const promptEntry = resolved.promptEntries.find((entry) => entry.key === promptKey);
       if (!promptEntry) {
@@ -250,13 +273,26 @@ router.post(
     const isPreview = Boolean(parsedBody.isPreview);
     const authorized = isAdminAuthorized(req, res);
     const authUser = res.locals.authUser as User | undefined;
+    const isActiveInstructor = Boolean(
+      authUser && authUser.role === 'INSTRUCTOR' && authUser.accountStatus === 'ACTIVE'
+    );
 
-    if (isPreview && !authorized) {
-      res.status(401).json({
-        success: false,
-        error: 'Unauthorized: admin access required for preview evaluation.'
-      });
-      return;
+    if (isPreview || parsedBody.versionId) {
+      if (!authorized && !authUser) {
+        res.status(401).json({
+          success: false,
+          error: 'Unauthorized: admin or instructor access required for preview evaluation.'
+        });
+        return;
+      }
+      if (!authorized && !isActiveInstructor) {
+        res.status(403).json({
+          success: false,
+          code: 'FORBIDDEN',
+          error: 'Only administrators or active instructors can preview or evaluate draft versions.'
+        });
+        return;
+      }
     }
 
     if (!isPreview) {
@@ -301,8 +337,22 @@ router.post(
     try {
       const resolved = await resolveVersionForExecution(code, {
         versionId: parsedBody.versionId,
-        allowDraft: authorized
+        allowDraft: Boolean(authorized || isActiveInstructor)
       });
+
+      if (
+        (isPreview || parsedBody.versionId) &&
+        !authorized &&
+        resolved.exercise.ownerId !== authUser?.id
+      ) {
+        res.status(403).json({
+          success: false,
+          code: 'FORBIDDEN',
+          error: 'You can only preview or evaluate drafts for exercises you own.'
+        });
+        return;
+      }
+
       resolvedExerciseTitle = resolved.exercise.title;
 
       let resolvedInstructorId: string | null = null;
@@ -437,13 +487,23 @@ router.post(
                 resolved.exercise.title
               );
             }
+            const parentTg = authUser?.parentTelegramId?.trim();
+            if (parentTg && parentTg !== resolvedStudent.telegram?.trim()) {
+              await notifyParent(
+                parentTg,
+                resolvedStudent.name,
+                evaluationResult.report,
+                resolved.exercise.title
+              );
+            }
             await sendTeacherAudit(
               resolvedStudent,
               parsedBody.rawText ?? '',
               parsedBody.finalText,
               evaluationResult.report,
               parsedBody.telegramTargetIds,
-              resolved.exercise.title
+              resolved.exercise.title,
+              resolvedInstructorId
             );
           } catch (notifyErr: unknown) {
             logger.error({ err: notifyErr, code }, 'Post-evaluation Telegram notification failed');

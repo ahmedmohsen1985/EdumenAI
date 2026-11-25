@@ -334,7 +334,7 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
             : {})
         });
 
-        router.push(`/reports/${encodeURIComponent(result.reportId)}`);
+        router.push(`/reports/${encodeURIComponent(result.reportId)}?autoDispatch=1`);
       } catch (err: unknown) {
         const isQuota = err instanceof ApiError && Boolean(err.isQuotaError || err.status === 429);
         const message =

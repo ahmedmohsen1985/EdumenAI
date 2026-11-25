@@ -36,6 +36,7 @@ interface LivePreviewPaneProps {
   versionNumber: number;
   templateSchema: TemplateConfig;
   promptEntries: PromptEntry[];
+  mode?: 'admin' | 'instructor';
 }
 
 function getStringField(values: BlockFormValues, keys: string[]): string {
@@ -60,7 +61,8 @@ export function LivePreviewPane({
   versionId,
   versionNumber,
   templateSchema,
-  promptEntries
+  promptEntries,
+  mode = 'admin'
 }: LivePreviewPaneProps): React.ReactElement {
   const [values, setValues] = useState<BlockFormValues>({});
   const [rawOcrTexts, setRawOcrTexts] = useState<Record<string, string>>({});
@@ -114,7 +116,7 @@ export function LivePreviewPane({
         promptKey,
         versionId,
         isPreview: true,
-        adminKey: getStoredAdminKey()
+        ...(mode === 'admin' ? { adminKey: getStoredAdminKey() } : {})
       });
       setValue(fieldKey, res.text);
       setRawOcrTexts((prev) => ({ ...prev, [fieldKey]: res.text }));
@@ -128,7 +130,7 @@ export function LivePreviewPane({
         model: res.model
       };
     },
-    [code, setFieldMeta, setValue, versionId]
+    [code, mode, setFieldMeta, setValue, versionId]
   );
 
   const onTriggerAction: BlockActionHandler = useCallback(
@@ -245,7 +247,7 @@ export function LivePreviewPane({
               ? { telegramTargetIds: evalBlock.bindings.telegramTargetIds }
               : {})
           },
-          { adminKey: getStoredAdminKey() }
+          mode === 'admin' ? { adminKey: getStoredAdminKey() } : undefined
         );
 
         setPreviewResult(result);
@@ -260,7 +262,7 @@ export function LivePreviewPane({
         setIsSubmitting(false);
       }
     },
-    [code, meta, rawOcrTexts, templateSchema.blocks, values, versionId]
+    [code, meta, mode, rawOcrTexts, templateSchema.blocks, values, versionId]
   );
 
   const promptMeta: PublicPromptMeta[] = promptEntries.map((p) => ({

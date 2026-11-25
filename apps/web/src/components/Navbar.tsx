@@ -11,6 +11,7 @@ import {
   CheckCheck,
   ChevronDown,
   FileText,
+  GraduationCap,
   Loader2,
   LogOut,
   Settings,
@@ -32,6 +33,7 @@ interface NavLinkItem {
   matchPrefix: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
+  instructorOnly?: boolean;
 }
 
 const NAV_LINKS: NavLinkItem[] = [
@@ -46,6 +48,13 @@ const NAV_LINKS: NavLinkItem[] = [
     label: 'Reports',
     matchPrefix: '/reports',
     icon: FileText
+  },
+  {
+    href: '/instructor',
+    label: 'Instructor Studio',
+    matchPrefix: '/instructor',
+    icon: GraduationCap,
+    instructorOnly: true
   },
   {
     href: '/admin',
@@ -101,9 +110,17 @@ export function Navbar(): React.ReactElement {
   const notifRef = useRef<HTMLDivElement | null>(null);
   const accountRef = useRef<HTMLDivElement | null>(null);
 
+  const isActiveInstructor =
+    user?.role === 'INSTRUCTOR' && user.accountStatus === 'ACTIVE';
+
   const visibleLinks = useMemo(
-    () => NAV_LINKS.filter((item) => !item.adminOnly || user?.role === 'ADMIN'),
-    [user?.role]
+    () =>
+      NAV_LINKS.filter((item) => {
+        if (item.adminOnly) return user?.role === 'ADMIN';
+        if (item.instructorOnly) return isActiveInstructor;
+        return true;
+      }),
+    [isActiveInstructor, user?.role]
   );
 
   // Close popovers on navigation
@@ -469,6 +486,16 @@ export function Navbar(): React.ReactElement {
                           <User className="h-4 w-4 text-zinc-500" />
                           My Profile
                         </Link>
+                        {isActiveInstructor && (
+                          <Link
+                            href="/instructor"
+                            role="menuitem"
+                            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/[0.05] hover:text-zinc-950"
+                          >
+                            <GraduationCap className="h-4 w-4 text-zinc-500" />
+                            Instructor Studio
+                          </Link>
+                        )}
                         {user.role === 'ADMIN' && (
                           <Link
                             href="/admin"

@@ -37,12 +37,21 @@ function hasValidPresentedAdminKey(req: Request): boolean {
   return crypto.timingSafeEqual(sha256Digest(presented), sha256Digest(configuredKey));
 }
 
-export function isAdminAuthorized(req: Request, res?: Response): boolean {
+export function isExplicitAdminAuthorized(req: Request, res?: Response): boolean {
   const authUser = res?.locals.authUser as User | undefined;
   if (authUser?.role === 'ADMIN' && authUser.accountStatus === 'ACTIVE') {
     return true;
   }
 
+  return hasValidPresentedAdminKey(req);
+}
+
+export function isAdminAuthorized(req: Request, res?: Response): boolean {
+  if (isExplicitAdminAuthorized(req, res)) {
+    return true;
+  }
+
+  const authUser = res?.locals.authUser as User | undefined;
   const configuredKey = env.adminAccessKey.trim();
   if (authUser) {
     // Non-admin (or inactive admin) users must never inherit open_dev bypass; require explicit key.

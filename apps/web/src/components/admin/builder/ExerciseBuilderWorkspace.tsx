@@ -50,6 +50,13 @@ import {
   type AdminExerciseDetail,
   type AdminPromptVersionView
 } from '../../../lib/admin-exercises-api';
+import {
+  fetchInstructorExercise,
+  fetchInstructorTelegram,
+  INSTRUCTOR_CACHE_KEYS,
+  publishInstructorExercise,
+  saveInstructorExerciseDraft
+} from '../../../lib/instructor-api';
 import { getCached, isCacheFresh } from '../../../lib/client-cache';
 import {
   PageEntrance,
@@ -119,7 +126,15 @@ function reindexBlocks(blocks: readonly TemplateBlock[]): TemplateBlock[] {
   return blocks.map((b, idx) => ({ ...b, order: idx }));
 }
 
-export function ExerciseBuilderWorkspace({ code }: { code: string }): React.ReactElement {
+export function ExerciseBuilderWorkspace({
+  code,
+  mode = 'admin'
+}: {
+  code: string;
+  mode?: 'admin' | 'instructor';
+}): React.ReactElement {
+  const isInstructorMode = mode === 'instructor';
+  const backHref = isInstructorMode ? '/instructor/exercises' : '/admin/exercises';
   const [exercise, setExercise] = useState<AdminExerciseDetail | null>(null);
   const [activeVersion, setActiveVersion] = useState<AdminPromptVersionView | null>(null);
   const [telegramTargets, setTelegramTargets] = useState<TelegramTargetView[]>([]);
@@ -151,7 +166,10 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
 
   const [isLoading, setIsLoading] = useState<boolean>(() => {
     if (!code) return false;
-    return getCached<AdminExerciseDetail>(ADMIN_EXERCISES_CACHE_KEYS.exercise(code)) === null;
+    const key = isInstructorMode
+      ? INSTRUCTOR_CACHE_KEYS.exercise(code)
+      : ADMIN_EXERCISES_CACHE_KEYS.exercise(code);
+    return getCached<AdminExerciseDetail>(key) === null;
   });
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
@@ -213,7 +231,9 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
         return;
       }
 
-      const cacheKey = ADMIN_EXERCISES_CACHE_KEYS.exercise(code);
+      const cacheKey = isInstructorMode
+        ? INSTRUCTOR_CACHE_KEYS.exercise(code)
+        : ADMIN_EXERCISES_CACHE_KEYS.exercise(code);
       const cached = !force ? getCached<AdminExerciseDetail>(cacheKey) : null;
       if (cached) {
         hydrateFromDetail(cached);
@@ -227,7 +247,9 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
 
       setLoadError(null);
       try {
-        const detail = await fetchAdminExercise(code, { force });
+        const detail = isInstructorMode
+          ? await fetchInstructorExercise(code, { force })
+          : await fetchAdminExercise(code, { force });
         hydrateFromDetail(detail);
       } catch (err: unknown) {
         if (!cached) {
@@ -237,7 +259,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
         setIsLoading(false);
       }
     },
-    [code, hydrateFromDetail]
+    [code, hydrateFromDetail, isInstructorMode]
   );
 
   useEffect(() => {
@@ -246,7 +268,10 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
 
   useEffect(() => {
     let cancelled = false;
-    void fetchTelegramTargetsSummary()
+    const targetsPromise = isInstructorMode
+      ? fetchInstructorTelegram().then((data) => data.targets)
+      : fetchTelegramTargetsSummary();
+    void targetsPromise
       .catch(() => [] as TelegramTargetView[])
       .then((targets) => {
         if (!cancelled) {
@@ -256,7 +281,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isInstructorMode]);
 
   const saveDraftInternal = async (): Promise<AdminPromptVersionView | null> => {
     if (promptValidationError) {
@@ -290,7 +315,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
     setIsSaving(true);
     setStatusBanner(null);
     try {
-      const saved = await saveAdminExerciseDraft(code, {
+      const draftPayload = {
         title: title.trim() || code,
         skill,
         description: description.trim() || null,
@@ -300,7 +325,10 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
           blocks: reindexBlocks(templateSchema.blocks)
         },
         promptEntries
-      });
+      };
+      const saved = isInstructorMode
+        ? await saveInstructorExerciseDraft(code, draftPayload)
+        : await saveAdminExerciseDraft(code, draftPayload);
       hydrateFromDetail(saved.exercise, saved.draftVersion);
       setStatusBanner({
         type: 'success',
@@ -344,7 +372,9 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
         targetVersionId = saved.id;
       }
 
-      const published = await publishAdminExercise(code, targetVersionId);
+      const published = isInstructorMode
+        ? await publishInstructorExercise(code, targetVersionId)
+        : await publishAdminExercise(code, targetVersionId);
       hydrateFromDetail(published.exercise, published.publishedVersion);
       setStatusBanner({
         type: 'success',
@@ -587,7 +617,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
             Retry
           </button>
           <Link
-            href="/admin/exercises"
+            href={backHref}
             className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !px-3.5 !py-2 !text-xs"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -608,7 +638,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <Link
-              href="/admin/exercises"
+              href={backHref}
               className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !px-3 !py-1.5 !text-xs"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -968,6 +998,7 @@ export function ExerciseBuilderWorkspace({ code }: { code: string }): React.Reac
           versionNumber={activeVersion.version}
           templateSchema={templateSchema}
           promptEntries={promptEntries}
+          mode={mode}
         />
       )}
     </PageEntrance>

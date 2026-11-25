@@ -15,12 +15,16 @@ export function sanitizeNextPath(next: string | null | undefined): string | null
 
 /** Role-smart landing path after a successful login/registration. */
 export function getPostLoginPath(
-  user: Pick<AuthUserView, 'role'>,
+  user: Pick<AuthUserView, 'role'> & Partial<Pick<AuthUserView, 'accountStatus'>>,
   next: string | null | undefined
 ): string {
   const safe = sanitizeNextPath(next);
   if (safe) return safe;
-  return user.role === 'ADMIN' ? '/admin' : '/exercises';
+  if (user.role === 'ADMIN') return '/admin';
+  if (user.role === 'INSTRUCTOR') {
+    return user.accountStatus === 'PENDING_APPROVAL' ? '/profile' : '/instructor';
+  }
+  return '/exercises';
 }
 
 export function getInitials(name: string | null | undefined, email?: string | null): string {

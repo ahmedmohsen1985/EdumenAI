@@ -215,7 +215,7 @@ router.get('/settings/telegram', async (_req: Request, res: Response, next: Next
   try {
     const [config, targets] = await Promise.all([
       getTelegramConfigView(),
-      listTelegramTargets()
+      listTelegramTargets({ ownerId: null })
     ]);
     res.json({
       success: true,
@@ -242,7 +242,7 @@ router.put('/settings/telegram', async (req: Request, res: Response, next: NextF
 router.post('/settings/telegram/targets', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const input = CreateTelegramTargetSchema.parse(req.body ?? {});
-    const data = await createTelegramTarget(input);
+    const data = await createTelegramTarget(input, { ownerId: null });
     res.status(201).json({ success: true, data });
   } catch (err) {
     next(err);
@@ -253,7 +253,7 @@ router.put('/settings/telegram/targets/:id', async (req: Request, res: Response,
   try {
     const id = String(req.params.id || '');
     const input = UpdateTelegramTargetSchema.parse(req.body ?? {});
-    const data = await updateTelegramTarget(id, input);
+    const data = await updateTelegramTarget(id, input, { ownerId: null });
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -263,7 +263,7 @@ router.put('/settings/telegram/targets/:id', async (req: Request, res: Response,
 router.delete('/settings/telegram/targets/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = String(req.params.id || '');
-    await deleteTelegramTarget(id);
+    await deleteTelegramTarget(id, { ownerId: null });
     res.json({ success: true, data: { deleted: true, id } });
   } catch (err) {
     next(err);

@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { ExerciseSkill } from '@edumenai/shared';
 import {
@@ -10,7 +10,9 @@ import {
   Mic,
   PenTool,
   Settings,
-  Sparkles
+  ShieldCheck,
+  Sparkles,
+  UserCheck
 } from 'lucide-react';
 import {
   fetchPublishedExercises,
@@ -18,6 +20,7 @@ import {
   type PublishedExerciseSummary
 } from '../lib/api';
 import { getCached, isCacheFresh } from '../lib/client-cache';
+import { useAuth } from './auth/AuthProvider';
 import { SlidingTabButton, StaggerCard, StaggerGrid } from './ui/MotionPrimitives';
 
 interface SkillTabConfig {
@@ -64,6 +67,7 @@ function isValidSkill(value: string | null): value is ExerciseSkill {
 }
 
 export function ExercisesHub(): React.ReactElement {
+  const { user, isLoading: authLoading } = useAuth();
   const initialExercises =
     getCached<PublishedExerciseSummary[]>(PUBLIC_CACHE_KEYS.publishedExercises) ?? [];
   const [exercises, setExercises] = useState<PublishedExerciseSummary[]>(initialExercises);
@@ -72,17 +76,26 @@ export function ExercisesHub(): React.ReactElement {
     getCached<PublishedExerciseSummary[]>(PUBLIC_CACHE_KEYS.publishedExercises) === null
   );
   const [error, setError] = useState<string | null>(null);
+  const lastFetchedUserIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
+    if (authLoading) return;
+
     const params = new URLSearchParams(window.location.search);
     const skillParam = params.get('skill')?.toUpperCase() ?? null;
     if (isValidSkill(skillParam)) {
       setActiveSkill(skillParam);
     }
 
+    const currentUserId = user?.id ?? null;
+    const userChanged =
+      lastFetchedUserIdRef.current !== undefined &&
+      lastFetchedUserIdRef.current !== currentUserId;
+    lastFetchedUserIdRef.current = currentUserId;
+
     const hasCached =
       getCached<PublishedExerciseSummary[]>(PUBLIC_CACHE_KEYS.publishedExercises) !== null;
-    if (hasCached && isCacheFresh(PUBLIC_CACHE_KEYS.publishedExercises, 30_000)) {
+    if (!userChanged && hasCached && isCacheFresh(PUBLIC_CACHE_KEYS.publishedExercises, 30_000)) {
       setIsLoading(false);
       return;
     }
@@ -93,7 +106,7 @@ export function ExercisesHub(): React.ReactElement {
     }
     setError(null);
 
-    void fetchPublishedExercises()
+    void fetchPublishedExercises({ force: userChanged })
       .then((list) => {
         if (cancelled) return;
         setExercises(list);
@@ -117,7 +130,7 @@ export function ExercisesHub(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authLoading, user?.id]);
 
   const countsBySkill = useMemo(() => {
     const counts: Record<ExerciseSkill, number> = {
@@ -259,7 +272,21 @@ export function ExercisesHub(): React.ReactElement {
                       </div>
                     </div>
 
-                    <h3 className="mt-4 text-lg font-bold leading-snug tracking-tight text-zinc-950">
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      {ex.owner ? (
+                        <span className="glass-pill">
+                          <UserCheck className="h-3 w-3 text-zinc-500" />
+                          By {ex.owner.name || 'Instructor'}
+                        </span>
+                      ) : (
+                        <span className="glass-pill">
+                          <ShieldCheck className="h-3 w-3 text-zinc-500" />
+                          EdumenAI Official
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="mt-3 text-lg font-bold leading-snug tracking-tight text-zinc-950">
                       {ex.title}
                     </h3>
                     {ex.description && (

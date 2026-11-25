@@ -82,6 +82,8 @@ export interface ResolvedExecutionContext {
 export interface AdminExerciseSummary {
   id: string;
   code: string;
+  ownerId: string | null;
+  owner: PublishedExerciseOwner | null;
   skill: ExerciseSkill;
   title: string;
   description: string | null;
@@ -117,6 +119,8 @@ export interface AdminPromptVersionView {
 export interface AdminExerciseDetail {
   id: string;
   code: string;
+  ownerId: string | null;
+  owner: PublishedExerciseOwner | null;
   skill: ExerciseSkill;
   title: string;
   description: string | null;
@@ -124,6 +128,11 @@ export interface AdminExerciseDetail {
   createdAt: string;
   updatedAt: string;
   versions: AdminPromptVersionView[];
+}
+
+export interface InstructorExercisesList {
+  myExercises: AdminExerciseSummary[];
+  platformExercises: PublishedExerciseSummary[];
 }
 
 export const CreateExerciseAdminSchema = z.object({
@@ -498,10 +507,118 @@ export async function resolveVersionForExecution(
   };
 }
 
+const OWNER_SELECT = {
+  id: true,
+  name: true,
+  school: true
+} as const;
+
+type ExerciseWithOwnerAndVersions = Prisma.ExerciseGetPayload<{
+  include: {
+    owner: { select: typeof OWNER_SELECT };
+    promptVersions: true;
+  };
+}>;
+
+type ExerciseSummaryRow = Prisma.ExerciseGetPayload<{
+  include: {
+    owner: { select: typeof OWNER_SELECT };
+    promptVersions: {
+      select: {
+        id: true;
+        version: true;
+        status: true;
+        isActive: true;
+        publishedAt: true;
+        updatedAt: true;
+      };
+    };
+  };
+}>;
+
+function mapOwner(
+  owner: { id: string; name: string | null; school: string | null } | null
+): PublishedExerciseOwner | null {
+  return owner
+    ? {
+        id: owner.id,
+        name: owner.name,
+        school: owner.school
+      }
+    : null;
+}
+
+function mapAdminExerciseSummary(ex: ExerciseSummaryRow): AdminExerciseSummary {
+  const active = ex.promptVersions.find((v) => v.status === 'PUBLISHED' && v.isActive) ?? null;
+  const latestDraft = ex.promptVersions.find((v) => v.status === 'DRAFT') ?? null;
+
+  return {
+    id: ex.id,
+    code: ex.code,
+    ownerId: ex.ownerId ?? null,
+    owner: mapOwner(ex.owner),
+    skill: ex.skill,
+    title: ex.title,
+    description: ex.description,
+    totalMarks: ex.totalMarks,
+    versionCount: ex.promptVersions.length,
+    activeVersion: active
+      ? {
+          id: active.id,
+          version: active.version,
+          publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
+        }
+      : null,
+    latestDraft: latestDraft
+      ? {
+          id: latestDraft.id,
+          version: latestDraft.version,
+          updatedAt: latestDraft.updatedAt.toISOString()
+        }
+      : null,
+    createdAt: ex.createdAt.toISOString(),
+    updatedAt: ex.updatedAt.toISOString()
+  };
+}
+
+function mapAdminExerciseDetail(ex: ExerciseWithOwnerAndVersions): AdminExerciseDetail {
+  return {
+    id: ex.id,
+    code: ex.code,
+    ownerId: ex.ownerId ?? null,
+    owner: mapOwner(ex.owner),
+    skill: ex.skill,
+    title: ex.title,
+    description: ex.description,
+    totalMarks: ex.totalMarks,
+    createdAt: ex.createdAt.toISOString(),
+    updatedAt: ex.updatedAt.toISOString(),
+    versions: ex.promptVersions.map((v) => mapAdminVersion(v))
+  };
+}
+
+export function buildInstructorScopedCode(instructorId: string, rawCode: string): string {
+  const idSuffix =
+    instructorId
+      .slice(-6)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '') || 'inst';
+  const prefix = `inst-${idSuffix}-`;
+  const slug =
+    rawCode
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'exercise';
+  const combined = slug.startsWith(prefix) ? slug : `${prefix}${slug}`;
+  return combined.slice(0, 64).replace(/-+$/, '') || `${prefix}exercise`.slice(0, 64);
+}
+
 export async function listAllExercisesAdmin(): Promise<AdminExerciseSummary[]> {
   return appCache.getOrSet('exercises:admin:list', async () => {
     const exercises = await prisma.exercise.findMany({
       include: {
+        owner: { select: OWNER_SELECT },
         promptVersions: {
           select: {
             id: true,
@@ -517,44 +634,15 @@ export async function listAllExercisesAdmin(): Promise<AdminExerciseSummary[]> {
       orderBy: { createdAt: 'asc' }
     });
 
-    return exercises.map((ex) => {
-      const active = ex.promptVersions.find((v) => v.status === 'PUBLISHED' && v.isActive) ?? null;
-      const latestDraft = ex.promptVersions.find((v) => v.status === 'DRAFT') ?? null;
-
-      return {
-        id: ex.id,
-        code: ex.code,
-        skill: ex.skill,
-        title: ex.title,
-        description: ex.description,
-        totalMarks: ex.totalMarks,
-        versionCount: ex.promptVersions.length,
-        activeVersion: active
-          ? {
-              id: active.id,
-              version: active.version,
-              publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
-            }
-          : null,
-        latestDraft: latestDraft
-          ? {
-              id: latestDraft.id,
-              version: latestDraft.version,
-              updatedAt: latestDraft.updatedAt.toISOString()
-            }
-          : null,
-        createdAt: ex.createdAt.toISOString(),
-        updatedAt: ex.updatedAt.toISOString()
-      };
-    });
+    return exercises.map(mapAdminExerciseSummary);
   });
 }
 
-export async function createExerciseAdmin(
-  rawInput: CreateExerciseAdminInput
+async function createExerciseCore(
+  code: string,
+  input: Omit<CreateExerciseAdminInput, 'code'>,
+  ownerId: string | null
 ): Promise<AdminExerciseDetail> {
-  const input = CreateExerciseAdminSchema.parse(rawInput);
-
   const defaultTemplate = buildDefaultTemplateForNewExercise(input.title, input.totalMarks);
   const defaultPrompts = buildDefaultPromptEntriesForNewExercise();
   const defaultMarkingSchema = buildMarkingJsonSchema({
@@ -564,11 +652,15 @@ export async function createExerciseAdmin(
   const created = await prisma.$transaction(async (tx) => {
     const exercise = await tx.exercise.create({
       data: {
-        code: input.code,
+        ownerId,
+        code,
         skill: input.skill,
         title: input.title,
         description: input.description ?? null,
         totalMarks: input.totalMarks
+      },
+      include: {
+        owner: { select: OWNER_SELECT }
       }
     });
 
@@ -587,25 +679,22 @@ export async function createExerciseAdmin(
       }
     });
 
-    return { exercise, versions: [draftVersion] };
+    return mapAdminExerciseDetail({ ...exercise, promptVersions: [draftVersion] });
   }, TX_OPTIONS);
 
-  const detail: AdminExerciseDetail = {
-    id: created.exercise.id,
-    code: created.exercise.code,
-    skill: created.exercise.skill,
-    title: created.exercise.title,
-    description: created.exercise.description,
-    totalMarks: created.exercise.totalMarks,
-    createdAt: created.exercise.createdAt.toISOString(),
-    updatedAt: created.exercise.updatedAt.toISOString(),
-    versions: created.versions.map((v) => mapAdminVersion(v))
-  };
-
   appCache.delPrefix('exercises:');
-  appCache.set(`exercises:admin:code:${detail.code}`, detail, 60_000);
+  if (ownerId === null) {
+    appCache.set(`exercises:admin:code:${created.code}`, created, 60_000);
+  }
 
-  return detail;
+  return created;
+}
+
+export async function createExerciseAdmin(
+  rawInput: CreateExerciseAdminInput
+): Promise<AdminExerciseDetail> {
+  const input = CreateExerciseAdminSchema.parse(rawInput);
+  return createExerciseCore(input.code, input, null);
 }
 
 export async function getExerciseAdmin(code: string): Promise<AdminExerciseDetail> {
@@ -613,6 +702,7 @@ export async function getExerciseAdmin(code: string): Promise<AdminExerciseDetai
     const exercise = await prisma.exercise.findUnique({
       where: { code },
       include: {
+        owner: { select: OWNER_SELECT },
         promptVersions: {
           orderBy: { version: 'desc' },
           take: 3
@@ -624,23 +714,14 @@ export async function getExerciseAdmin(code: string): Promise<AdminExerciseDetai
       throw new HttpError(404, `Exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
     }
 
-    return {
-      id: exercise.id,
-      code: exercise.code,
-      skill: exercise.skill,
-      title: exercise.title,
-      description: exercise.description,
-      totalMarks: exercise.totalMarks,
-      createdAt: exercise.createdAt.toISOString(),
-      updatedAt: exercise.updatedAt.toISOString(),
-      versions: exercise.promptVersions.map((v) => mapAdminVersion(v))
-    };
+    return mapAdminExerciseDetail(exercise);
   });
 }
 
-export async function saveExerciseDraftAdmin(
+async function saveExerciseDraftCore(
   code: string,
-  rawInput: SaveExerciseDraftAdminInput
+  rawInput: SaveExerciseDraftAdminInput,
+  expectedOwnerId?: string
 ): Promise<{ exercise: AdminExerciseDetail; draftVersion: AdminPromptVersionView }> {
   const input = SaveExerciseDraftAdminSchema.parse(rawInput);
 
@@ -661,6 +742,10 @@ export async function saveExerciseDraftAdmin(
 
     if (!exercise) {
       throw new HttpError(404, `Exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
+    }
+
+    if (expectedOwnerId !== undefined && exercise.ownerId !== expectedOwnerId) {
+      throw new HttpError(403, 'You can only access your own exercises.', 'FORBIDDEN');
     }
 
     if (
@@ -749,6 +834,7 @@ export async function saveExerciseDraftAdmin(
     const refreshed = await tx.exercise.findUniqueOrThrow({
       where: { id: exercise.id },
       include: {
+        owner: { select: OWNER_SELECT },
         promptVersions: {
           orderBy: { version: 'desc' },
           take: 3
@@ -759,20 +845,12 @@ export async function saveExerciseDraftAdmin(
     return { refreshed, draftVersion };
   }, TX_OPTIONS);
 
-  const exerciseDetail: AdminExerciseDetail = {
-    id: result.refreshed.id,
-    code: result.refreshed.code,
-    skill: result.refreshed.skill,
-    title: result.refreshed.title,
-    description: result.refreshed.description,
-    totalMarks: result.refreshed.totalMarks,
-    createdAt: result.refreshed.createdAt.toISOString(),
-    updatedAt: result.refreshed.updatedAt.toISOString(),
-    versions: result.refreshed.promptVersions.map((v) => mapAdminVersion(v))
-  };
+  const exerciseDetail = mapAdminExerciseDetail(result.refreshed);
 
   appCache.delPrefix('exercises:');
-  appCache.set(`exercises:admin:code:${code}`, exerciseDetail, 60_000);
+  if (expectedOwnerId === undefined) {
+    appCache.set(`exercises:admin:code:${code}`, exerciseDetail, 60_000);
+  }
 
   return {
     exercise: exerciseDetail,
@@ -780,9 +858,17 @@ export async function saveExerciseDraftAdmin(
   };
 }
 
-export async function publishExerciseAdmin(
+export async function saveExerciseDraftAdmin(
   code: string,
-  versionId?: string
+  rawInput: SaveExerciseDraftAdminInput
+): Promise<{ exercise: AdminExerciseDetail; draftVersion: AdminPromptVersionView }> {
+  return saveExerciseDraftCore(code, rawInput);
+}
+
+async function publishExerciseCore(
+  code: string,
+  versionId?: string,
+  expectedOwnerId?: string
 ): Promise<{ exercise: AdminExerciseDetail; publishedVersion: AdminPromptVersionView }> {
   const result = await prisma.$transaction(async (tx) => {
     const exercise = await tx.exercise.findUnique({
@@ -796,6 +882,10 @@ export async function publishExerciseAdmin(
 
     if (!exercise) {
       throw new HttpError(404, `Exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
+    }
+
+    if (expectedOwnerId !== undefined && exercise.ownerId !== expectedOwnerId) {
+      throw new HttpError(403, 'You can only access your own exercises.', 'FORBIDDEN');
     }
 
     const target = versionId
@@ -812,7 +902,6 @@ export async function publishExerciseAdmin(
       );
     }
 
-    // Mark all other versions inactive (keeping PUBLISHED status for rollback clarity)
     await tx.promptVersion.updateMany({
       where: {
         exerciseId: exercise.id,
@@ -847,6 +936,7 @@ export async function publishExerciseAdmin(
     const refreshed = await tx.exercise.findUniqueOrThrow({
       where: { id: exercise.id },
       include: {
+        owner: { select: OWNER_SELECT },
         promptVersions: {
           orderBy: { version: 'desc' },
           take: 3
@@ -857,20 +947,12 @@ export async function publishExerciseAdmin(
     return { refreshed, published };
   }, TX_OPTIONS);
 
-  const exerciseDetail: AdminExerciseDetail = {
-    id: result.refreshed.id,
-    code: result.refreshed.code,
-    skill: result.refreshed.skill,
-    title: result.refreshed.title,
-    description: result.refreshed.description,
-    totalMarks: result.refreshed.totalMarks,
-    createdAt: result.refreshed.createdAt.toISOString(),
-    updatedAt: result.refreshed.updatedAt.toISOString(),
-    versions: result.refreshed.promptVersions.map((v) => mapAdminVersion(v))
-  };
+  const exerciseDetail = mapAdminExerciseDetail(result.refreshed);
 
   appCache.delPrefix('exercises:');
-  appCache.set(`exercises:admin:code:${code}`, exerciseDetail, 60_000);
+  if (expectedOwnerId === undefined) {
+    appCache.set(`exercises:admin:code:${code}`, exerciseDetail, 60_000);
+  }
 
   return {
     exercise: exerciseDetail,
@@ -878,17 +960,29 @@ export async function publishExerciseAdmin(
   };
 }
 
-export async function deleteExerciseAdmin(
-  code: string
+export async function publishExerciseAdmin(
+  code: string,
+  versionId?: string
+): Promise<{ exercise: AdminExerciseDetail; publishedVersion: AdminPromptVersionView }> {
+  return publishExerciseCore(code, versionId);
+}
+
+async function deleteExerciseCore(
+  code: string,
+  expectedOwnerId?: string
 ): Promise<{ deleted: true; code: string }> {
   await prisma.$transaction(async (tx) => {
     const exercise = await tx.exercise.findUnique({
       where: { code },
-      select: { id: true }
+      select: { id: true, ownerId: true }
     });
 
     if (!exercise) {
       throw new HttpError(404, `Exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
+    }
+
+    if (expectedOwnerId !== undefined && exercise.ownerId !== expectedOwnerId) {
+      throw new HttpError(403, 'You can only access your own exercises.', 'FORBIDDEN');
     }
 
     await tx.submission.deleteMany({ where: { exerciseId: exercise.id } });
@@ -900,12 +994,18 @@ export async function deleteExerciseAdmin(
   return { deleted: true, code };
 }
 
-export async function duplicateExerciseAdmin(
-  sourceCode: string,
-  rawInput: DuplicateExerciseAdminInput
-): Promise<AdminExerciseDetail> {
-  const input = DuplicateExerciseAdminSchema.parse(rawInput);
+export async function deleteExerciseAdmin(
+  code: string
+): Promise<{ deleted: true; code: string }> {
+  return deleteExerciseCore(code);
+}
 
+async function duplicateExerciseCore(
+  sourceCode: string,
+  targetCode: string,
+  title: string,
+  options: { expectedSourceOwnerId?: string; newOwnerId: string | null }
+): Promise<AdminExerciseDetail> {
   const source = await prisma.exercise.findUnique({
     where: { code: sourceCode },
     include: {
@@ -920,10 +1020,17 @@ export async function duplicateExerciseAdmin(
     throw new HttpError(404, `Exercise "${sourceCode}" not found.`, 'EXERCISE_NOT_FOUND');
   }
 
+  if (
+    options.expectedSourceOwnerId !== undefined &&
+    source.ownerId !== options.expectedSourceOwnerId
+  ) {
+    throw new HttpError(403, 'You can only duplicate your own exercises.', 'FORBIDDEN');
+  }
+
   const latestVersion = source.promptVersions[0] ?? null;
   const clonedTemplate = latestVersion
     ? parseTemplateSchema(latestVersion.templateSchema)
-    : buildDefaultTemplateForNewExercise(input.title, source.totalMarks);
+    : buildDefaultTemplateForNewExercise(title, source.totalMarks);
   const clonedPrompts = latestVersion
     ? parsePromptEntries(latestVersion)
     : buildDefaultPromptEntriesForNewExercise();
@@ -934,11 +1041,15 @@ export async function duplicateExerciseAdmin(
   const created = await prisma.$transaction(async (tx) => {
     const exercise = await tx.exercise.create({
       data: {
-        code: input.code,
+        ownerId: options.newOwnerId,
+        code: targetCode,
         skill: source.skill,
-        title: input.title.trim(),
+        title: title.trim(),
         description: source.description,
         totalMarks: source.totalMarks
+      },
+      include: {
+        owner: { select: OWNER_SELECT }
       }
     });
 
@@ -957,23 +1068,170 @@ export async function duplicateExerciseAdmin(
       }
     });
 
-    return { exercise, versions: [draftVersion] };
+    return mapAdminExerciseDetail({ ...exercise, promptVersions: [draftVersion] });
   }, TX_OPTIONS);
 
-  const detail: AdminExerciseDetail = {
-    id: created.exercise.id,
-    code: created.exercise.code,
-    skill: created.exercise.skill,
-    title: created.exercise.title,
-    description: created.exercise.description,
-    totalMarks: created.exercise.totalMarks,
-    createdAt: created.exercise.createdAt.toISOString(),
-    updatedAt: created.exercise.updatedAt.toISOString(),
-    versions: created.versions.map((v) => mapAdminVersion(v))
-  };
-
   appCache.delPrefix('exercises:');
-  appCache.set(`exercises:admin:code:${detail.code}`, detail, 60_000);
+  if (options.newOwnerId === null) {
+    appCache.set(`exercises:admin:code:${created.code}`, created, 60_000);
+  }
 
-  return detail;
+  return created;
+}
+
+export async function duplicateExerciseAdmin(
+  sourceCode: string,
+  rawInput: DuplicateExerciseAdminInput
+): Promise<AdminExerciseDetail> {
+  const input = DuplicateExerciseAdminSchema.parse(rawInput);
+  return duplicateExerciseCore(sourceCode, input.code, input.title, { newOwnerId: null });
+}
+
+export async function listExercisesForInstructor(
+  instructorId: string
+): Promise<InstructorExercisesList> {
+  const [ownRows, platformRows] = await Promise.all([
+    prisma.exercise.findMany({
+      where: { ownerId: instructorId },
+      include: {
+        owner: { select: OWNER_SELECT },
+        promptVersions: {
+          select: {
+            id: true,
+            version: true,
+            status: true,
+            isActive: true,
+            publishedAt: true,
+            updatedAt: true
+          },
+          orderBy: { version: 'desc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    }),
+    prisma.exercise.findMany({
+      where: {
+        ownerId: null,
+        promptVersions: {
+          some: {
+            status: 'PUBLISHED',
+            isActive: true
+          }
+        }
+      },
+      include: {
+        owner: { select: OWNER_SELECT },
+        promptVersions: {
+          where: {
+            status: 'PUBLISHED',
+            isActive: true
+          },
+          select: {
+            id: true,
+            version: true,
+            publishedAt: true
+          },
+          orderBy: { version: 'desc' },
+          take: 1
+        }
+      },
+      orderBy: { createdAt: 'asc' }
+    })
+  ]);
+
+  return {
+    myExercises: ownRows.map(mapAdminExerciseSummary),
+    platformExercises: platformRows
+      .filter((ex) => ex.promptVersions.length > 0)
+      .map((ex) => {
+        const active = ex.promptVersions[0]!;
+        return {
+          id: ex.id,
+          code: ex.code,
+          skill: ex.skill,
+          title: ex.title,
+          description: ex.description,
+          totalMarks: ex.totalMarks,
+          integrityEnabled: ex.integrityEnabled,
+          owner: mapOwner(ex.owner),
+          activeVersion: {
+            id: active.id,
+            version: active.version,
+            publishedAt: active.publishedAt ? active.publishedAt.toISOString() : null
+          }
+        };
+      })
+  };
+}
+
+export async function createExerciseInstructor(
+  instructorId: string,
+  rawInput: unknown
+): Promise<AdminExerciseDetail> {
+  const input = CreateExerciseAdminSchema.parse(rawInput);
+  const scopedCode = buildInstructorScopedCode(instructorId, input.code);
+  return createExerciseCore(scopedCode, input, instructorId);
+}
+
+export async function getExerciseInstructor(
+  instructorId: string,
+  code: string
+): Promise<AdminExerciseDetail> {
+  const exercise = await prisma.exercise.findUnique({
+    where: { code },
+    include: {
+      owner: { select: OWNER_SELECT },
+      promptVersions: {
+        orderBy: { version: 'desc' },
+        take: 3
+      }
+    }
+  });
+
+  if (!exercise) {
+    throw new HttpError(404, `Exercise "${code}" not found.`, 'EXERCISE_NOT_FOUND');
+  }
+
+  if (exercise.ownerId !== instructorId) {
+    throw new HttpError(403, 'You can only access your own exercises.', 'FORBIDDEN');
+  }
+
+  return mapAdminExerciseDetail(exercise);
+}
+
+export async function saveExerciseDraftInstructor(
+  instructorId: string,
+  code: string,
+  rawInput: unknown
+): Promise<{ exercise: AdminExerciseDetail; draftVersion: AdminPromptVersionView }> {
+  const input = SaveExerciseDraftAdminSchema.parse(rawInput);
+  return saveExerciseDraftCore(code, input, instructorId);
+}
+
+export async function publishExerciseInstructor(
+  instructorId: string,
+  code: string,
+  versionId?: string
+): Promise<{ exercise: AdminExerciseDetail; publishedVersion: AdminPromptVersionView }> {
+  return publishExerciseCore(code, versionId, instructorId);
+}
+
+export async function duplicateExerciseInstructor(
+  instructorId: string,
+  sourceCode: string,
+  rawInput: unknown
+): Promise<AdminExerciseDetail> {
+  const input = DuplicateExerciseAdminSchema.parse(rawInput);
+  const scopedCode = buildInstructorScopedCode(instructorId, input.code);
+  return duplicateExerciseCore(sourceCode, scopedCode, input.title, {
+    expectedSourceOwnerId: instructorId,
+    newOwnerId: instructorId
+  });
+}
+
+export async function deleteExerciseInstructor(
+  instructorId: string,
+  code: string
+): Promise<{ deleted: true; code: string }> {
+  return deleteExerciseCore(code, instructorId);
 }

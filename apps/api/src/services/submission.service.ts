@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type User } from '@prisma/client';
 import type {
   ErrorItem,
   Justification,
@@ -47,7 +47,12 @@ export interface CreatedEvaluatedSubmission {
 }
 
 export interface ListReportsParams {
+  viewerUser?: User | null;
+  isAdminOverride?: boolean;
   exerciseCode?: string;
+  studentId?: string;
+  instructorId?: string;
+  search?: string;
   includePreview?: boolean;
   limit?: number;
   offset?: number;
@@ -58,15 +63,49 @@ export interface ListReportsResult {
   total: number;
 }
 
+export interface ReportAccessContext {
+  report: PersistedReport;
+  studentTelegramId: string | null;
+  parentTelegramId: string | null;
+  submissionInstructorId: string | null;
+  exerciseOwnerId: string | null;
+  submissionStudentId: string | null;
+}
+
+export interface InstructorOverviewStats {
+  approvedStudentsCount: number;
+  pendingRequestsCount: number;
+  myExercisesCount: number;
+  publishedExercisesCount: number;
+  totalSubmissionsCount: number;
+  recentSubmissions: PersistedReport[];
+}
+
+const REPORT_INCLUDE = {
+  submission: {
+    include: {
+      exercise: true,
+      promptVersion: true,
+      instructor: {
+        select: {
+          id: true,
+          name: true
+        }
+      },
+      student: {
+        select: {
+          id: true,
+          telegramId: true,
+          parentTelegramId: true,
+          parentPhone: true
+        }
+      }
+    }
+  }
+} as const;
+
 type ReportWithRelations = Prisma.EvaluationReportGetPayload<{
-  include: {
-    submission: {
-      include: {
-        exercise: true;
-        promptVersion: true;
-      };
-    };
-  };
+  include: typeof REPORT_INCLUDE;
 }>;
 
 function mapReportToPersisted(record: ReportWithRelations): PersistedReport {
@@ -88,6 +127,10 @@ function mapReportToPersisted(record: ReportWithRelations): PersistedReport {
   return {
     id: record.id,
     submissionId: submission.id,
+    studentId: submission.studentId,
+    instructorId: submission.instructorId,
+    instructorName: submission.instructor?.name ?? null,
+    exerciseOwnerId: submission.exercise.ownerId ?? null,
     exerciseCode: submission.exercise.code,
     exerciseTitle: submission.exercise.title,
     promptVersion: submission.promptVersion.version,
@@ -174,14 +217,7 @@ export async function createEvaluatedSubmission(
         totalTokens: usage.totalTokens ?? null,
         latencyMs: usage.latencyMs ?? null
       },
-      include: {
-        submission: {
-          include: {
-            exercise: true,
-            promptVersion: true
-          }
-        }
-      }
+      include: REPORT_INCLUDE
     });
 
     return evaluationReport;
@@ -196,30 +232,77 @@ export async function createEvaluatedSubmission(
 }
 
 export async function listReports(params: ListReportsParams = {}): Promise<ListReportsResult> {
-  const includePreview = params.includePreview ?? false;
+  const viewerUser = params.viewerUser ?? null;
+  const isAdminOverride = Boolean(params.isAdminOverride);
+
+  if (!viewerUser && !isAdminOverride) {
+    throw new HttpError(401, 'Authentication required to view evaluation reports.', 'AUTH_REQUIRED');
+  }
+
   const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
   const offset = Math.max(params.offset ?? 0, 0);
+  const andConditions: Prisma.SubmissionWhereInput[] = [];
 
-  const submissionWhere: Prisma.SubmissionWhereInput = {
-    ...(includePreview ? {} : { isPreview: false }),
-    ...(params.exerciseCode ? { exercise: { code: params.exerciseCode } } : {})
-  };
+  if (params.exerciseCode) {
+    andConditions.push({ exercise: { code: params.exerciseCode } });
+  }
+
+  if (isAdminOverride || viewerUser?.role === 'ADMIN') {
+    if (!params.includePreview) {
+      andConditions.push({ isPreview: false });
+    }
+    if (params.studentId) {
+      andConditions.push({ studentId: params.studentId });
+    }
+    if (params.instructorId) {
+      andConditions.push({
+        OR: [{ instructorId: params.instructorId }, { exercise: { ownerId: params.instructorId } }]
+      });
+    }
+  } else if (viewerUser?.role === 'INSTRUCTOR') {
+    if (viewerUser.accountStatus !== 'ACTIVE') {
+      throw new HttpError(
+        403,
+        'Your instructor account must be active to view student reports.',
+        'FORBIDDEN'
+      );
+    }
+    if (!params.includePreview) {
+      andConditions.push({ isPreview: false });
+    }
+    andConditions.push({
+      OR: [{ instructorId: viewerUser.id }, { exercise: { ownerId: viewerUser.id } }]
+    });
+    if (params.studentId) {
+      andConditions.push({ studentId: params.studentId });
+    }
+  } else if (viewerUser) {
+    // Students can only ever view their own non-preview reports
+    andConditions.push({ studentId: viewerUser.id });
+    andConditions.push({ isPreview: false });
+  }
+
+  const search = params.search?.trim();
+  if (search) {
+    andConditions.push({
+      OR: [
+        { studentName: { contains: search, mode: 'insensitive' } },
+        { studentSchool: { contains: search, mode: 'insensitive' } },
+        { studentClass: { contains: search, mode: 'insensitive' } },
+        { exercise: { title: { contains: search, mode: 'insensitive' } } },
+        { exercise: { code: { contains: search, mode: 'insensitive' } } }
+      ]
+    });
+  }
 
   const where: Prisma.EvaluationReportWhereInput = {
-    submission: submissionWhere
+    submission: andConditions.length > 0 ? { AND: andConditions } : {}
   };
 
   const [rows, total] = await Promise.all([
     prisma.evaluationReport.findMany({
       where,
-      include: {
-        submission: {
-          include: {
-            exercise: true,
-            promptVersion: true
-          }
-        }
-      },
+      include: REPORT_INCLUDE,
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset
@@ -233,22 +316,109 @@ export async function listReports(params: ListReportsParams = {}): Promise<ListR
   };
 }
 
-export async function getReportById(id: string): Promise<PersistedReport> {
+export async function getReportAccessContext(
+  id: string,
+  viewerUser?: User | null,
+  isAdminOverride = false
+): Promise<ReportAccessContext> {
   const record = await prisma.evaluationReport.findUnique({
     where: { id },
-    include: {
-      submission: {
-        include: {
-          exercise: true,
-          promptVersion: true
-        }
-      }
-    }
+    include: REPORT_INCLUDE
   });
 
   if (!record) {
     throw new HttpError(404, `Evaluation report "${id}" not found.`, 'REPORT_NOT_FOUND');
   }
 
-  return mapReportToPersisted(record);
+  if (!viewerUser && !isAdminOverride) {
+    throw new HttpError(401, 'Authentication required to view this evaluation report.', 'AUTH_REQUIRED');
+  }
+
+  if (!isAdminOverride && viewerUser && viewerUser.role !== 'ADMIN') {
+    if (viewerUser.role === 'INSTRUCTOR') {
+      const ownsSubmission =
+        record.submission.instructorId === viewerUser.id ||
+        record.submission.exercise.ownerId === viewerUser.id;
+      if (viewerUser.accountStatus !== 'ACTIVE' || !ownsSubmission) {
+        throw new HttpError(403, 'You do not have permission to access this report.', 'FORBIDDEN');
+      }
+    } else {
+      const isOwnStudentReport =
+        record.submission.studentId === viewerUser.id && !record.submission.isPreview;
+      if (!isOwnStudentReport) {
+        throw new HttpError(403, 'You do not have permission to access this report.', 'FORBIDDEN');
+      }
+    }
+  }
+
+  return {
+    report: mapReportToPersisted(record),
+    studentTelegramId: record.submission.student?.telegramId ?? null,
+    parentTelegramId: record.submission.student?.parentTelegramId ?? null,
+    submissionInstructorId: record.submission.instructorId,
+    exerciseOwnerId: record.submission.exercise.ownerId,
+    submissionStudentId: record.submission.studentId
+  };
+}
+
+export async function getReportById(id: string): Promise<PersistedReport> {
+  const ctx = await getReportAccessContext(id, null, true);
+  return ctx.report;
+}
+
+export async function getInstructorOverviewStats(
+  instructorId: string
+): Promise<InstructorOverviewStats> {
+  const instructorSubmissionScope: Prisma.SubmissionWhereInput = {
+    isPreview: false,
+    OR: [{ instructorId }, { exercise: { ownerId: instructorId } }]
+  };
+
+  const [
+    approvedStudentsCount,
+    pendingRequestsCount,
+    myExercisesCount,
+    publishedExercisesCount,
+    totalSubmissionsCount,
+    recentRows
+  ] = await Promise.all([
+    prisma.studentInstructor.count({
+      where: { instructorId, status: 'APPROVED' }
+    }),
+    prisma.studentInstructor.count({
+      where: { instructorId, status: 'PENDING' }
+    }),
+    prisma.exercise.count({
+      where: { ownerId: instructorId }
+    }),
+    prisma.exercise.count({
+      where: {
+        ownerId: instructorId,
+        promptVersions: {
+          some: {
+            status: 'PUBLISHED',
+            isActive: true
+          }
+        }
+      }
+    }),
+    prisma.evaluationReport.count({
+      where: { submission: instructorSubmissionScope }
+    }),
+    prisma.evaluationReport.findMany({
+      where: { submission: instructorSubmissionScope },
+      include: REPORT_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+      take: 5
+    })
+  ]);
+
+  return {
+    approvedStudentsCount,
+    pendingRequestsCount,
+    myExercisesCount,
+    publishedExercisesCount,
+    totalSubmissionsCount,
+    recentSubmissions: recentRows.map(mapReportToPersisted)
+  };
 }

@@ -13,6 +13,7 @@ import { decryptSecret, encryptSecret, maskSecret } from '../lib/crypto.js';
 import { appCache } from '../lib/cache.js';
 import { logger } from '../lib/logger.js';
 import { prisma } from '../lib/prisma.js';
+import { HttpError } from './exercise.service.js';
 
 const MAX_MESSAGE_LENGTH = 4000;
 const QUOTA_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
@@ -25,6 +26,7 @@ export interface TelegramStudentInfo {
   class?: string;
   telegram?: string;
   telegramId?: string;
+  parentTelegramId?: string;
 }
 
 export interface TelegramApiResult {
@@ -64,13 +66,48 @@ async function resolveBotToken(): Promise<string> {
   return envToken;
 }
 
-async function resolveTargetChatIds(targetIds?: string[]): Promise<string[]> {
+async function resolveTargetChatIds(
+  targetIds?: string[],
+  options?: { ownerId?: string | null }
+): Promise<string[]> {
+  const ownerId = options?.ownerId?.trim() || null;
+
+  if (ownerId) {
+    try {
+      if (Array.isArray(targetIds) && targetIds.length > 0) {
+        const targets = await prisma.telegramTarget.findMany({
+          where: { id: { in: targetIds }, ownerId, isActive: true },
+          orderBy: { createdAt: 'asc' }
+        });
+        const ids = targets.map((t) => t.chatId.trim()).filter(Boolean);
+        if (ids.length > 0) return [...new Set(ids)];
+      }
+
+      const defaultTargets = await prisma.telegramTarget.findMany({
+        where: { ownerId, isActive: true, isDefault: true },
+        orderBy: { createdAt: 'asc' }
+      });
+      const defaultIds = defaultTargets.map((t) => t.chatId.trim()).filter(Boolean);
+      if (defaultIds.length > 0) return [...new Set(defaultIds)];
+
+      const activeTargets = await prisma.telegramTarget.findMany({
+        where: { ownerId, isActive: true },
+        orderBy: { createdAt: 'asc' }
+      });
+      const activeIds = activeTargets.map((t) => t.chatId.trim()).filter(Boolean);
+      return [...new Set(activeIds)];
+    } catch (err) {
+      logger.warn({ err, ownerId }, 'Failed reading instructor TelegramTarget from DB');
+      return [];
+    }
+  }
+
   const envGroup = (process.env.TELEGRAM_TEACHER_GROUP_ID || '').trim();
 
   try {
     if (Array.isArray(targetIds) && targetIds.length > 0) {
       const targets = await prisma.telegramTarget.findMany({
-        where: { id: { in: targetIds }, isActive: true },
+        where: { id: { in: targetIds }, ownerId: null, isActive: true },
         orderBy: { createdAt: 'asc' }
       });
       const ids = targets.map((t) => t.chatId.trim()).filter(Boolean);
@@ -78,7 +115,7 @@ async function resolveTargetChatIds(targetIds?: string[]): Promise<string[]> {
     }
 
     const defaultTargets = await prisma.telegramTarget.findMany({
-      where: { isActive: true, isDefault: true },
+      where: { ownerId: null, isActive: true, isDefault: true },
       orderBy: { createdAt: 'asc' }
     });
     const defaultIds = defaultTargets.map((t) => t.chatId.trim()).filter(Boolean);
@@ -183,19 +220,39 @@ export async function upsertTelegramConfig(input: UpsertTelegramConfig): Promise
   return getTelegramConfigView();
 }
 
-export async function listTelegramTargets(): Promise<TelegramTargetView[]> {
-  return appCache.getOrSet('telegram:targets', async () => {
+export async function getInstructorTelegramStatus(): Promise<{
+  isEnabled: boolean;
+  hasBotToken: boolean;
+}> {
+  const view = await getTelegramConfigView();
+  return {
+    isEnabled: view.isEnabled,
+    hasBotToken: view.hasBotToken
+  };
+}
+
+export async function listTelegramTargets(options?: {
+  ownerId?: string | null;
+}): Promise<TelegramTargetView[]> {
+  const ownerId = options?.ownerId ?? null;
+  return appCache.getOrSet(`telegram:targets:${ownerId ?? 'platform'}`, async () => {
     const rows = await prisma.telegramTarget.findMany({
+      where: { ownerId },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }]
     });
     return rows.map(toTargetView);
   });
 }
 
-export async function createTelegramTarget(input: CreateTelegramTarget): Promise<TelegramTargetView> {
+export async function createTelegramTarget(
+  input: CreateTelegramTarget,
+  options?: { ownerId?: string | null }
+): Promise<TelegramTargetView> {
   const parsed = CreateTelegramTargetSchema.parse(input);
+  const ownerId = options?.ownerId ?? null;
   const created = await prisma.telegramTarget.create({
     data: {
+      ownerId,
       name: parsed.name.trim(),
       chatId: parsed.chatId.trim(),
       description: parsed.description?.trim() || null,
@@ -209,9 +266,23 @@ export async function createTelegramTarget(input: CreateTelegramTarget): Promise
 
 export async function updateTelegramTarget(
   id: string,
-  input: UpdateTelegramTarget
+  input: UpdateTelegramTarget,
+  options?: { ownerId?: string | null }
 ): Promise<TelegramTargetView> {
   const parsed = UpdateTelegramTargetSchema.parse(input);
+  if (options?.ownerId !== undefined) {
+    const existing = await prisma.telegramTarget.findUnique({
+      where: { id },
+      select: { id: true, ownerId: true }
+    });
+    if (!existing) {
+      throw new HttpError(404, `Telegram target "${id}" not found.`, 'TELEGRAM_TARGET_NOT_FOUND');
+    }
+    if (existing.ownerId !== options.ownerId) {
+      throw new HttpError(403, 'You do not own this Telegram target.', 'FORBIDDEN');
+    }
+  }
+
   const updated = await prisma.telegramTarget.update({
     where: { id },
     data: {
@@ -228,7 +299,23 @@ export async function updateTelegramTarget(
   return toTargetView(updated);
 }
 
-export async function deleteTelegramTarget(id: string): Promise<{ id: string; deleted: boolean }> {
+export async function deleteTelegramTarget(
+  id: string,
+  options?: { ownerId?: string | null }
+): Promise<{ id: string; deleted: boolean }> {
+  if (options?.ownerId !== undefined) {
+    const existing = await prisma.telegramTarget.findUnique({
+      where: { id },
+      select: { id: true, ownerId: true }
+    });
+    if (!existing) {
+      throw new HttpError(404, `Telegram target "${id}" not found.`, 'TELEGRAM_TARGET_NOT_FOUND');
+    }
+    if (existing.ownerId !== options.ownerId) {
+      throw new HttpError(403, 'You do not own this Telegram target.', 'FORBIDDEN');
+    }
+  }
+
   await prisma.telegramTarget.delete({ where: { id } });
   appCache.delPrefix('telegram:');
   return { id, deleted: true };
@@ -415,15 +502,53 @@ Check the detailed report on your screen!
   return sendTelegramMessage(telegramId, msg);
 }
 
+export async function notifyParent(
+  parentTelegramId: string,
+  studentName: string,
+  evaluation: Partial<MarkingReport>,
+  exerciseTitle = 'Assessment'
+): Promise<TelegramApiResult | null> {
+  const cleanId = String(parentTelegramId || '').trim();
+  if (!cleanId || !/^-?\d+$/.test(cleanId)) {
+    return null;
+  }
+
+  const displayName = studentName ? studentName.trim() : 'Your student';
+  const errorCount = Array.isArray(evaluation.errors) ? evaluation.errors.length : 0;
+  const marks = evaluation.marks;
+  const safeTitle = escapeTelegramHtml(exerciseTitle || 'Assessment');
+
+  const msg = `
+👨‍👩‍👧 <b>EdumenAI - Parent Progress Alert · ${safeTitle}</b>
+👤 <b>Student:</b> ${escapeTelegramHtml(displayName)}
+
+📊 <b>Scores:</b>
+• Total: <b>${marks?.total ?? 0} / ${marks?.total_max ?? 23}</b>
+• Content & Communication: <b>${marks?.content ?? 0} / ${marks?.content_max ?? 8}</b>
+• Language: <b>${marks?.language ?? 0} / ${marks?.language_max ?? 15}</b>
+
+💡 <b>Examiner Summary:</b>
+${escapeTelegramHtml(evaluation.justification?.content || '')}
+${escapeTelegramHtml(evaluation.justification?.language || '')}
+
+🔍 <b>Errors Flagged:</b> ${errorCount} item(s).
+
+<i>EdumenAI powered by EDUMENIA</i>
+`;
+
+  return sendTelegramMessage(cleanId, msg);
+}
+
 export async function sendTeacherAudit(
   studentInfo: TelegramStudentInfo,
   textOrRaw: string | undefined,
   finalOrEval?: string | Partial<MarkingReport>,
   maybeEval?: Partial<MarkingReport>,
   targetIds?: string[],
-  exerciseTitle = 'Assessment'
+  exerciseTitle = 'Assessment',
+  ownerId?: string | null
 ): Promise<Array<{ chatId: string; result: TelegramApiResult | null }>> {
-  const resolvedTargets = await resolveTargetChatIds(targetIds);
+  const resolvedTargets = await resolveTargetChatIds(targetIds, { ownerId });
   if (resolvedTargets.length === 0) {
     logger.warn('[Telegram] sendTeacherAudit skipped: no Telegram targets configured.');
     return [];
@@ -474,7 +599,8 @@ export async function dispatchFullReportWithPdf({
   pdfBuffer,
   fileName,
   targetIds,
-  exerciseTitle = 'Assessment'
+  exerciseTitle = 'Assessment',
+  ownerId
 }: {
   studentInfo: TelegramStudentInfo;
   evaluation: Partial<MarkingReport>;
@@ -484,12 +610,15 @@ export async function dispatchFullReportWithPdf({
   fileName?: string;
   targetIds?: string[];
   exerciseTitle?: string;
+  ownerId?: string | null;
 }): Promise<{
   targets: Array<{ chatId: string; ok: boolean; error?: string }>;
   student: TelegramApiResult | null;
+  parent: TelegramApiResult | null;
 }> {
   const targets: Array<{ chatId: string; ok: boolean; error?: string }> = [];
   let student: TelegramApiResult | null = null;
+  let parent: TelegramApiResult | null = null;
 
   const errorCount = Array.isArray(evaluation.errors) ? evaluation.errors.length : 0;
   const firstName = studentInfo.name ? studentInfo.name.split(' ')[0] : 'Student';
@@ -498,7 +627,7 @@ export async function dispatchFullReportWithPdf({
   const resolvedFileName = fileName || 'EdumenAI_Report.pdf';
   const safeTitle = escapeTelegramHtml(exerciseTitle || 'Assessment');
 
-  const resolvedTargets = await resolveTargetChatIds(targetIds);
+  const resolvedTargets = await resolveTargetChatIds(targetIds, { ownerId });
   if (resolvedTargets.length > 0) {
     const teacherCaption = `📋 <b>EdumenAI - ${safeTitle} Marked Report</b>
 👤 <b>Student:</b> ${escapeTelegramHtml(studentInfo.name || 'Unknown')} (${escapeTelegramHtml(classLabel)} - ${escapeTelegramHtml(studentInfo.school || 'School')})
@@ -524,8 +653,9 @@ export async function dispatchFullReportWithPdf({
     logger.warn('[Telegram] dispatchFullReportWithPdf: no teacher targets configured.');
   }
 
-  const studentTelegramId = studentInfo.telegramId || studentInfo.telegram;
-  if (studentTelegramId && /^\d+$/.test(String(studentTelegramId).trim())) {
+  const rawStudentTelegram = studentInfo.telegramId || studentInfo.telegram;
+  const cleanedStudentTelegram = rawStudentTelegram ? String(rawStudentTelegram).trim() : '';
+  if (cleanedStudentTelegram && /^-?\d+$/.test(cleanedStudentTelegram)) {
     const studentCaption = `🌟 <b>EdumenAI - ${safeTitle} Marked Report</b>
 👤 <b>Hello ${escapeTelegramHtml(firstName)}!</b>
 
@@ -541,15 +671,46 @@ export async function dispatchFullReportWithPdf({
 
     student = pdfBuffer
       ? await sendTelegramDocument(
-          String(studentTelegramId).trim(),
+          cleanedStudentTelegram,
           pdfBuffer,
           resolvedFileName,
           studentCaption
         )
-      : await sendTelegramMessage(String(studentTelegramId).trim(), studentCaption);
+      : await sendTelegramMessage(cleanedStudentTelegram, studentCaption);
   }
 
-  return { targets, student };
+  const cleanedParentTelegram = studentInfo.parentTelegramId
+    ? String(studentInfo.parentTelegramId).trim()
+    : '';
+  if (
+    cleanedParentTelegram &&
+    /^-?\d+$/.test(cleanedParentTelegram) &&
+    cleanedParentTelegram !== cleanedStudentTelegram
+  ) {
+    const parentCaption = `👨‍👩‍👧 <b>EdumenAI - Parent Progress Report · ${safeTitle}</b>
+👤 <b>Student:</b> ${escapeTelegramHtml(studentInfo.name || 'Student')}
+
+📊 <b>Scores:</b>
+• Total: <b>${marks?.total ?? 0} / ${marks?.total_max ?? 23}</b>
+• Content & Communication: <b>${marks?.content ?? 0} / ${marks?.content_max ?? 8}</b>
+• Language: <b>${marks?.language ?? 0} / ${marks?.language_max ?? 15}</b>
+🔍 <b>Errors Flagged:</b> ${errorCount}
+
+📎 <i>Attached: Complete Marked PDF Report for your review.</i>
+
+<i>EdumenAI powered by EDUMENIA</i>`;
+
+    parent = pdfBuffer
+      ? await sendTelegramDocument(
+          cleanedParentTelegram,
+          pdfBuffer,
+          resolvedFileName,
+          parentCaption
+        )
+      : await sendTelegramMessage(cleanedParentTelegram, parentCaption);
+  }
+
+  return { targets, student, parent };
 }
 
 export async function sendTeacherQuotaAlert({

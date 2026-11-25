@@ -74,6 +74,10 @@ export const EvaluatePersistedResponseSchema = z.object({
 export const PersistedReportSchema = z.object({
   id: z.string(),
   submissionId: z.string(),
+  studentId: z.string().nullable().optional(),
+  instructorId: z.string().nullable().optional(),
+  instructorName: z.string().nullable().optional(),
+  exerciseOwnerId: z.string().nullable().optional(),
   exerciseCode: z.string(),
   exerciseTitle: z.string().optional(),
   promptVersion: z.number().int(),

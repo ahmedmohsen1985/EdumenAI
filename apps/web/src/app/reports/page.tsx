@@ -3,22 +3,49 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { PersistedReport } from '@edumenai/shared';
-import { ArrowRight, FileText, Loader2 } from 'lucide-react';
+import {
+  ArrowRight,
+  FileText,
+  Loader2,
+  Lock,
+  LogIn,
+  Search,
+  UserPlus
+} from 'lucide-react';
 import { fetchReports } from '../../lib/api';
+import { useAuth } from '../../components/auth/AuthProvider';
 import { PageEntrance } from '../../components/ui/MotionPrimitives';
 
 export default function ReportsArchivePage(): React.ReactElement {
+  const { user, isLoading: authLoading } = useAuth();
   const [items, setItems] = useState<PersistedReport[]>([]);
   const [total, setTotal] = useState<number>(0);
+  const [searchInput, setSearchInput] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const isStaff = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
+
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+
     let cancelled = false;
     setIsLoading(true);
     setError(null);
 
-    void fetchReports({ limit: 50, offset: 0 })
+    void fetchReports({
+      limit: 50,
+      offset: 0,
+      ...(isStaff && debouncedSearch ? { search: debouncedSearch } : {})
+    })
       .then((res) => {
         if (cancelled) return;
         setItems(res.items);
@@ -35,18 +62,69 @@ export default function ReportsArchivePage(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authLoading, debouncedSearch, isStaff, user]);
+
+  if (authLoading) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+        <div className="glass-panel-strong flex items-center gap-3 p-6">
+          <Loader2 className="h-5 w-5 animate-spin text-zinc-700" />
+          <span className="text-sm font-medium text-zinc-700">Verifying your account...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <PageEntrance className="mx-auto max-w-xl px-4 py-16 sm:px-6">
+        <div className="glass-panel-strong relative overflow-hidden p-8 text-center sm:p-10">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-gradient-to-br from-white via-zinc-200/70 to-transparent blur-2xl"
+          />
+          <div className="relative">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-900 text-white shadow-glass-lg">
+              <Lock className="h-6 w-6" />
+            </div>
+            <div className="mt-4 flex justify-center">
+              <span className="glass-pill">Private Reports</span>
+            </div>
+            <h1 className="mt-3 text-2xl font-extrabold tracking-tight text-zinc-950">
+              Sign In to View Your Reports
+            </h1>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-zinc-600">
+              Evaluation reports are private to each student, their assigned instructor, and
+              platform administrators.
+            </p>
+            <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+              <Link href="/login?next=/reports" className="glass-btn-primary">
+                <LogIn className="h-4 w-4" />
+                Sign In
+              </Link>
+              <Link href="/register?next=/reports" className="glass-btn-secondary">
+                <UserPlus className="h-4 w-4" />
+                Create Account
+              </Link>
+            </div>
+          </div>
+        </div>
+      </PageEntrance>
+    );
+  }
 
   return (
     <PageEntrance className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="glass-pill">Archive</div>
+          <div className="glass-pill">{user.role === 'STUDENT' ? 'Student Archive' : 'Archive'}</div>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            Evaluation Reports
+            {user.role === 'STUDENT' ? 'My Submissions' : 'Evaluation Reports'}
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600 sm:text-base">
-            View marked submissions, download official PDFs, and resend reports to Telegram.
+            {user.role === 'STUDENT'
+              ? 'Review your marked assessments, download official PDFs, and share reports to Telegram.'
+              : 'View marked submissions, search by student or class, download official PDFs, and dispatch reports to Telegram.'}
           </p>
         </div>
         {!isLoading && (
@@ -55,6 +133,23 @@ export default function ReportsArchivePage(): React.ReactElement {
           </span>
         )}
       </div>
+
+      {/* Staff Search Input */}
+      {isStaff && (
+        <div className="glass-panel p-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search reports by student name, school, class, or exercise..."
+              aria-label="Search evaluation reports"
+              className="glass-input !pl-10"
+            />
+          </div>
+        </div>
+      )}
 
       {error && (
         <div
@@ -75,16 +170,22 @@ export default function ReportsArchivePage(): React.ReactElement {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 text-zinc-500 shadow-glass ring-1 ring-zinc-900/[0.06]">
             <FileText className="h-6 w-6" />
           </div>
-          <h2 className="mt-4 text-base font-semibold text-zinc-900">No reports yet</h2>
+          <h2 className="mt-4 text-base font-semibold text-zinc-900">
+            {debouncedSearch ? 'No matching reports' : 'No reports yet'}
+          </h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Complete an exercise to generate your first AI examiner report.
+            {debouncedSearch
+              ? 'Try a different student name or clear the search bar.'
+              : 'Complete an exercise to generate your first AI examiner report.'}
           </p>
-          <div className="mt-5">
-            <Link href="/exercises" className="glass-btn-primary">
-              Browse Exercises
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
+          {!debouncedSearch && (
+            <div className="mt-5">
+              <Link href="/exercises" className="glass-btn-primary">
+                Browse Exercises
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          )}
         </div>
       ) : (
         <div className="glass-panel-strong overflow-hidden">
@@ -107,6 +208,7 @@ export default function ReportsArchivePage(): React.ReactElement {
                       <div className="font-semibold text-zinc-900">{item.studentName}</div>
                       <div className="text-xs text-zinc-500">
                         {item.studentClass || item.studentSchool || 'General'}
+                        {item.instructorName ? ` · Instructor: ${item.instructorName}` : ''}
                       </div>
                     </td>
                     <td className="px-5 py-4">

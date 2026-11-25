@@ -1,10 +1,11 @@
 import path from 'node:path';
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+import type { User } from '@prisma/client';
 import multer from 'multer';
-import type { MarkingReport, StudentInfo } from '@edumenai/shared';
-import { getReportById, listReports } from '../services/submission.service.js';
-import { dispatchFullReportWithPdf } from '../services/telegram.service.js';
-import { isAdminAuthorized } from '../middleware/admin-auth.middleware.js';
+import type { MarkingReport } from '@edumenai/shared';
+import { getReportAccessContext, listReports } from '../services/submission.service.js';
+import { dispatchFullReportWithPdf, type TelegramStudentInfo } from '../services/telegram.service.js';
+import { isExplicitAdminAuthorized } from '../middleware/admin-auth.middleware.js';
 
 const router = Router();
 
@@ -60,16 +61,36 @@ function parseTargetIds(raw: unknown): string[] | undefined {
 
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authUser = res.locals.authUser as User | undefined;
+    const isAdminOverride = isExplicitAdminAuthorized(req, res);
+
     const exerciseCode =
       typeof req.query.exerciseCode === 'string' && req.query.exerciseCode.trim()
         ? req.query.exerciseCode.trim()
         : undefined;
-    const includePreview = req.query.includePreview === 'true' && isAdminAuthorized(req);
+    const studentId =
+      typeof req.query.studentId === 'string' && req.query.studentId.trim()
+        ? req.query.studentId.trim()
+        : undefined;
+    const instructorId =
+      typeof req.query.instructorId === 'string' && req.query.instructorId.trim()
+        ? req.query.instructorId.trim()
+        : undefined;
+    const search =
+      typeof req.query.search === 'string' && req.query.search.trim()
+        ? req.query.search.trim()
+        : undefined;
+    const includePreview = req.query.includePreview === 'true' && isAdminOverride;
     const limit = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : 20;
     const offset = typeof req.query.offset === 'string' ? Number.parseInt(req.query.offset, 10) : 0;
 
     const data = await listReports({
+      viewerUser: authUser ?? null,
+      isAdminOverride,
       exerciseCode,
+      studentId,
+      instructorId,
+      search,
       includePreview,
       limit: Number.isFinite(limit) ? limit : 20,
       offset: Number.isFinite(offset) ? offset : 0
@@ -86,10 +107,16 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 
 router.get('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const report = await getReportById(String(req.params.id || ''));
+    const authUser = res.locals.authUser as User | undefined;
+    const isAdminOverride = isExplicitAdminAuthorized(req, res);
+    const ctx = await getReportAccessContext(
+      String(req.params.id || ''),
+      authUser ?? null,
+      isAdminOverride
+    );
     res.json({
       success: true,
-      data: report
+      data: ctx.report
     });
   } catch (err) {
     next(err);
@@ -101,25 +128,36 @@ router.post(
   singleFileUpload('pdf'),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const report = await getReportById(String(req.params.id || ''));
+      const authUser = res.locals.authUser as User | undefined;
+      const authorizedAdmin = isExplicitAdminAuthorized(req, res);
+      const ctx = await getReportAccessContext(
+        String(req.params.id || ''),
+        authUser ?? null,
+        authorizedAdmin
+      );
+      const { report } = ctx;
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const authorized = isAdminAuthorized(req);
 
-      const studentTelegram = authorized
+      const studentTelegram = authorizedAdmin
         ? typeof body.studentTelegram === 'string' && body.studentTelegram.trim()
           ? body.studentTelegram.trim()
           : typeof body.telegramId === 'string' && body.telegramId.trim()
             ? body.telegramId.trim()
-            : undefined
-        : undefined;
+            : ctx.studentTelegramId || undefined
+        : ctx.studentTelegramId || undefined;
 
-      const targetIds = authorized ? parseTargetIds(body.targetIds) : undefined;
+      const parentTelegramId = ctx.parentTelegramId || undefined;
+      const ownerId = ctx.submissionInstructorId ?? ctx.exerciseOwnerId ?? null;
+      const canSelectTargets =
+        authorizedAdmin || (authUser?.role === 'INSTRUCTOR' && authUser.id === ownerId);
+      const targetIds = canSelectTargets ? parseTargetIds(body.targetIds) : undefined;
 
-      const studentInfo: StudentInfo = {
+      const studentInfo: TelegramStudentInfo = {
         name: report.studentName,
         ...(report.studentClass ? { className: report.studentClass } : {}),
         ...(report.studentSchool ? { school: report.studentSchool } : {}),
-        ...(studentTelegram ? { telegram: studentTelegram } : {})
+        ...(studentTelegram ? { telegram: studentTelegram } : {}),
+        ...(parentTelegramId ? { parentTelegramId } : {})
       };
 
       const evaluation: MarkingReport = {
@@ -142,7 +180,8 @@ router.post(
         pdfBuffer: req.file?.buffer,
         fileName,
         targetIds,
-        exerciseTitle: report.exerciseTitle || report.exerciseCode.toUpperCase()
+        exerciseTitle: report.exerciseTitle || report.exerciseCode.toUpperCase(),
+        ownerId
       });
 
       res.json({

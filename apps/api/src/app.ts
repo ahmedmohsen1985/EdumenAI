@@ -13,6 +13,7 @@ import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import enrollmentsRoutes from './routes/enrollments.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
+import instructorRoutes from './routes/instructor.routes.js';
 import exercisesRoutes from './routes/exercises.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import adminRoutes from './routes/admin.routes.js';
@@ -46,6 +47,7 @@ export function createApp(): Express {
   app.use('/api/auth', authRoutes);
   app.use('/api/enrollments', enrollmentsRoutes);
   app.use('/api/notifications', notificationsRoutes);
+  app.use('/api/instructor', instructorRoutes);
   app.use('/api/exercises', exercisesRoutes);
   app.use('/api/reports', reportsRoutes);
   app.use('/api/admin', adminRoutes);

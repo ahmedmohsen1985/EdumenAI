@@ -549,6 +549,12 @@ function countPlainWords(text: string): number {
 
 export function normalizeCorrectedHtml(rawHtml: string, fallbackText = ''): string {
   let corrected = String(rawHtml || fallbackText || '').trim();
+  corrected = corrected.replace(
+    /<mark\s+[^>]*class=["']?(?:suggestion|addition)["']?[^>]*>([\s\S]*?)<\/mark>/gi,
+    '<ins>$1</ins>'
+  );
+  corrected = corrected.replace(/<suggest(?:\s+[^>]*)?>([\s\S]*?)<\/suggest>/gi, '<ins>$1</ins>');
+  corrected = corrected.replace(/<ins(?:\s+[^>]*)?>/gi, '<ins>');
   corrected = corrected.replace(/<mark(?:\s+[^>]*)?>/gi, '<mark class="correction">');
   corrected = corrected.replace(
     /<mark[^>]*>([A-Za-z])<\/mark>([A-Za-z0-9_]+)/g,
@@ -557,6 +563,14 @@ export function normalizeCorrectedHtml(rawHtml: string, fallbackText = ''): stri
   corrected = corrected.replace(
     /([A-Za-z0-9_]+)<mark[^>]*>([A-Za-z0-9_]+)<\/mark>/g,
     '<mark class="correction">$1$2</mark>'
+  );
+  corrected = corrected.replace(
+    /<ins[^>]*>([A-Za-z])<\/ins>([A-Za-z0-9_]+)/g,
+    '<ins>$1$2</ins>'
+  );
+  corrected = corrected.replace(
+    /([A-Za-z0-9_]+)<ins[^>]*>([A-Za-z0-9_]+)<\/ins>/g,
+    '<ins>$1$2</ins>'
   );
   return corrected;
 }
@@ -629,6 +643,7 @@ export interface EvaluateAssessmentParams {
   systemPrompts?: string[];
   markingSchema?: Record<string, unknown>;
   marksLimits?: Partial<MarkingMarksLimits>;
+  files?: AiFilePayload[];
 }
 
 export interface EvaluateAssessmentResult {
@@ -644,10 +659,16 @@ export async function evaluateAssessment({
   studentText,
   systemPrompts,
   markingSchema,
-  marksLimits
+  marksLimits,
+  files
 }: EvaluateAssessmentParams): Promise<EvaluateAssessmentResult> {
-  if (!taskPrompt || !studentText) {
-    throw new HttpError(400, 'Task prompt and student text are required.', 'VALIDATION_ERROR');
+  const hasFiles = Boolean(files && files.length > 0);
+  if ((!taskPrompt?.trim() && !hasFiles) || !studentText) {
+    throw new HttpError(
+      400,
+      'Student text and either a task prompt or attached media are required.',
+      'VALIDATION_ERROR'
+    );
   }
 
   const validPrompts = Array.isArray(systemPrompts)
@@ -662,16 +683,20 @@ export async function evaluateAssessment({
     );
   }
 
+  const effectiveTaskPrompt =
+    taskPrompt.trim() ||
+    '(Visual/document stimulus attached for reference — evaluate the student response directly against the attached media according to the rubric.)';
+
   const userMessage = `
 STUDENT FIRST NAME: ${studentName || 'Student'}
 TASK PROMPT:
-${taskPrompt}
+${effectiveTaskPrompt}
 
 STUDENT SUBMITTED DRAFT:
 ${studentText}
 
 CRITICAL REQUIREMENT FOR 'corrected_version':
-Rewrite and polish the student's submission from start to finish. You MUST NOT cut off, shorten, or stop early. Every single paragraph and sentence down to the closing line must be included in 'corrected_version', using plain <mark>...</mark> tags around corrected words.
+Rewrite and polish the student's submission from start to finish. You MUST NOT cut off, shorten, or stop early. Every single paragraph and sentence down to the closing line must be included in 'corrected_version', using <mark>...</mark> tags for error corrections and <ins>...</ins> tags for optional suggested enhancements if specified by the prompt.
 
 OUTPUT REQUIREMENT:
 Return strictly valid JSON with keys: marks, justification, errors, content_feedback, corrected_version.
@@ -695,6 +720,7 @@ Return strictly valid JSON with keys: marks, justification, errors, content_feed
     operationName: 'AssessmentEvaluation',
     systemPrompt: fullSystemInstruction,
     userPrompt: userMessage,
+    ...(hasFiles && files ? { files } : {}),
     jsonSchema: resolvedSchema,
     schemaName: 'submit_marking_report',
     temperature: 0.0,

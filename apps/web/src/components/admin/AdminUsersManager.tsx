@@ -41,6 +41,16 @@ import {
   type AdminUsersQuery
 } from '../../lib/api';
 import { useAuth } from '../auth/AuthProvider';
+import { PasswordStrengthMeter } from '../auth/PasswordStrengthMeter';
+import {
+  validateClassName,
+  validateFullName,
+  validatePhone,
+  validateSchoolName,
+  validateStrictEmail,
+  validateStrongPassword,
+  validateTelegramUserId
+} from '../../lib/validation';
 import {
   AnimatedModal,
   PageEntrance,
@@ -443,6 +453,17 @@ export function AdminUsersManager(): React.ReactElement {
     setCreateError(null);
   };
 
+  const createFieldErrors = {
+    name: createForm.name ? validateFullName(createForm.name) : null,
+    email: createForm.email ? validateStrictEmail(createForm.email) : null,
+    password: createForm.password ? validateStrongPassword(createForm.password) : null,
+    school: validateSchoolName(createForm.school, false),
+    className: validateClassName(createForm.className, false),
+    telegramId: validateTelegramUserId(createForm.telegramId, false),
+    parentPhone: validatePhone(createForm.parentPhone, false),
+    parentTelegramId: validateTelegramUserId(createForm.parentTelegramId, false)
+  };
+
   const handleCreateSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setCreateError(null);
@@ -451,16 +472,18 @@ export function AdminUsersManager(): React.ReactElement {
     const email = createForm.email.trim().toLowerCase();
     const password = createForm.password;
 
-    if (name.length < 2) {
-      setCreateError('Full name must be at least 2 characters.');
-      return;
-    }
-    if (!email) {
-      setCreateError('Email address is required.');
-      return;
-    }
-    if (password.length < 8) {
-      setCreateError('Password must be at least 8 characters.');
+    const validationErr =
+      validateFullName(name) ||
+      validateStrictEmail(email) ||
+      validateStrongPassword(password) ||
+      validateSchoolName(createForm.school, false) ||
+      validateClassName(createForm.className, false) ||
+      validateTelegramUserId(createForm.telegramId, false) ||
+      validatePhone(createForm.parentPhone, false) ||
+      validateTelegramUserId(createForm.parentTelegramId, false);
+
+    if (validationErr) {
+      setCreateError(validationErr);
       return;
     }
 
@@ -1134,13 +1157,16 @@ export function AdminUsersManager(): React.ReactElement {
                 id="create-user-name"
                 type="text"
                 required
-                minLength={2}
+                minLength={4}
                 maxLength={120}
                 value={createForm.name}
                 onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Amina Karimova"
-                className="glass-input"
+                className={`glass-input ${createFieldErrors.name ? '!border-rose-300' : ''}`}
               />
+              {createFieldErrors.name && (
+                <p className="text-[11px] font-medium text-rose-700">{createFieldErrors.name}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1154,8 +1180,11 @@ export function AdminUsersManager(): React.ReactElement {
                 value={createForm.email}
                 onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
                 placeholder="name@school.edu"
-                className="glass-input"
+                className={`glass-input ${createFieldErrors.email ? '!border-rose-300' : ''}`}
               />
+              {createFieldErrors.email && (
+                <p className="text-[11px] font-medium text-rose-700">{createFieldErrors.email}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1173,10 +1202,16 @@ export function AdminUsersManager(): React.ReactElement {
                 maxLength={128}
                 value={createForm.password}
                 onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Minimum 8 characters"
+                placeholder="Minimum 8 chars (letters + numbers)"
                 autoComplete="new-password"
-                className="glass-input"
+                className={`glass-input ${createFieldErrors.password ? '!border-rose-300' : ''}`}
               />
+              <PasswordStrengthMeter password={createForm.password} />
+              {createFieldErrors.password && (
+                <p className="text-[11px] font-medium text-rose-700">
+                  {createFieldErrors.password}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1244,8 +1279,11 @@ export function AdminUsersManager(): React.ReactElement {
                 value={createForm.school}
                 onChange={(e) => setCreateForm((f) => ({ ...f, school: e.target.value }))}
                 placeholder="School or academy name"
-                className="glass-input"
+                className={`glass-input ${createFieldErrors.school ? '!border-rose-300' : ''}`}
               />
+              {createFieldErrors.school && (
+                <p className="text-[11px] font-medium text-rose-700">{createFieldErrors.school}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1258,12 +1296,17 @@ export function AdminUsersManager(): React.ReactElement {
               <input
                 id="create-user-class"
                 type="text"
-                maxLength={120}
+                maxLength={60}
                 value={createForm.className}
                 onChange={(e) => setCreateForm((f) => ({ ...f, className: e.target.value }))}
-                placeholder="e.g. IELTS-B2"
-                className="glass-input"
+                placeholder="e.g. Year 10B"
+                className={`glass-input ${createFieldErrors.className ? '!border-rose-300' : ''}`}
               />
+              {createFieldErrors.className && (
+                <p className="text-[11px] font-medium text-rose-700">
+                  {createFieldErrors.className}
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1271,17 +1314,22 @@ export function AdminUsersManager(): React.ReactElement {
                 htmlFor="create-user-telegram"
                 className="block text-xs font-semibold text-zinc-700"
               >
-                Telegram
+                Telegram User ID
               </label>
               <input
                 id="create-user-telegram"
                 type="text"
-                maxLength={120}
+                maxLength={20}
                 value={createForm.telegramId}
                 onChange={(e) => setCreateForm((f) => ({ ...f, telegramId: e.target.value }))}
-                placeholder="@username or chat ID"
-                className="glass-input"
+                placeholder="Numeric ID (e.g. 123456789)"
+                className={`glass-input ${createFieldErrors.telegramId ? '!border-rose-300' : ''}`}
               />
+              {createFieldErrors.telegramId && (
+                <p className="text-[11px] font-medium text-rose-700">
+                  {createFieldErrors.telegramId}
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1297,9 +1345,14 @@ export function AdminUsersManager(): React.ReactElement {
                 maxLength={40}
                 value={createForm.parentPhone}
                 onChange={(e) => setCreateForm((f) => ({ ...f, parentPhone: e.target.value }))}
-                placeholder="+998 90 123 45 67"
-                className="glass-input"
+                placeholder="+2010XXXXXXXX"
+                className={`glass-input ${createFieldErrors.parentPhone ? '!border-rose-300' : ''}`}
               />
+              {createFieldErrors.parentPhone && (
+                <p className="text-[11px] font-medium text-rose-700">
+                  {createFieldErrors.parentPhone}
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
@@ -1307,19 +1360,24 @@ export function AdminUsersManager(): React.ReactElement {
                 htmlFor="create-user-parent-telegram"
                 className="block text-xs font-semibold text-zinc-700"
               >
-                Parent Telegram
+                Parent Telegram User ID
               </label>
               <input
                 id="create-user-parent-telegram"
                 type="text"
-                maxLength={120}
+                maxLength={20}
                 value={createForm.parentTelegramId}
                 onChange={(e) =>
                   setCreateForm((f) => ({ ...f, parentTelegramId: e.target.value }))
                 }
-                placeholder="@parent_username or chat ID"
-                className="glass-input"
+                placeholder="Numeric ID (e.g. 987654321)"
+                className={`glass-input ${createFieldErrors.parentTelegramId ? '!border-rose-300' : ''}`}
               />
+              {createFieldErrors.parentTelegramId && (
+                <p className="text-[11px] font-medium text-rose-700">
+                  {createFieldErrors.parentTelegramId}
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">

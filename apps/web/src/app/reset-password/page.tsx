@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, KeyRound, Loader2 } from 'lucide-react';
 import { resetPassword } from '../../lib/api';
+import { validateStrongPassword } from '../../lib/validation';
+import { PasswordStrengthMeter } from '../../components/auth/PasswordStrengthMeter';
 import { PageEntrance } from '../../components/ui/MotionPrimitives';
 
 function ResetPasswordForm(): React.ReactElement {
@@ -29,8 +31,9 @@ function ResetPasswordForm(): React.ReactElement {
     event.preventDefault();
     if (submitting) return;
     setError(null);
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+    const passwordErr = validateStrongPassword(password);
+    if (passwordErr) {
+      setError(passwordErr);
       return;
     }
     if (password !== confirm) {
@@ -102,6 +105,7 @@ function ResetPasswordForm(): React.ReactElement {
                   disabled={submitting}
                   className="glass-input"
                 />
+                <PasswordStrengthMeter password={password} />
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="reset-confirm" className="text-xs font-semibold text-zinc-600">

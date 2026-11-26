@@ -6,6 +6,7 @@ import { dropdownBlockDefinition } from './blocks/dropdown.block.js';
 import { textareaBlockDefinition } from './blocks/textarea.block.js';
 import { richtextBlockDefinition } from './blocks/richtext.block.js';
 import { fileUploadOcrBlockDefinition } from './blocks/file-upload-ocr.block.js';
+import { mediaUploadBlockDefinition } from './blocks/media-upload.block.js';
 import { examinerEvaluationBlockDefinition } from './blocks/examiner-evaluation.block.js';
 import { actionButtonBlockDefinition } from './blocks/action-button.block.js';
 
@@ -34,6 +35,7 @@ export function registerBuiltInBlocks(): void {
     textareaBlockDefinition,
     richtextBlockDefinition,
     fileUploadOcrBlockDefinition,
+    mediaUploadBlockDefinition,
     examinerEvaluationBlockDefinition,
     actionButtonBlockDefinition
   ];

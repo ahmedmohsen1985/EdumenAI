@@ -13,6 +13,7 @@
   RegisterRequest,
   RequestEnrollmentRequest,
   RespondEnrollmentRequest,
+  TwoFactorChallengeView,
   UpdateProfileRequest,
   UpdateUserAdminRequest,
   UserRole,
@@ -432,8 +433,60 @@ export async function fetchPublicInstructors(): Promise<PublicInstructorView[]> 
   return unwrapData<PublicInstructorView[]>(res);
 }
 
-export async function registerAccount(payload: RegisterRequest): Promise<AuthUserView> {
+export type RegisterAccountResult =
+  | { requiresVerification: true; challenge: TwoFactorChallengeView }
+  | { requiresVerification?: false; user: AuthUserView };
+
+export type LoginAccountResult =
+  | { requiresTwoFactor: true; challenge: TwoFactorChallengeView }
+  | { requiresTwoFactor: false; user: AuthUserView };
+
+export interface TotpSetupPayload {
+  secret: string;
+  otpauthUri: string;
+}
+
+export async function registerAccount(payload: RegisterRequest): Promise<RegisterAccountResult> {
   const res = await apiFetch<unknown>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  const data = unwrapData<RegisterAccountResult>(res);
+  if (!('requiresVerification' in data && data.requiresVerification === true)) {
+    invalidatePublishedExerciseCache();
+    invalidateCache('admin:');
+    invalidateCache('inst:');
+  }
+  return data;
+}
+
+export async function loginAccount(payload: {
+  email: string;
+  password: string;
+}): Promise<LoginAccountResult> {
+  const res = await apiFetch<unknown>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  const data = unwrapData<
+    | { requiresTwoFactor: true; challenge: TwoFactorChallengeView }
+    | { requiresTwoFactor?: false; user: AuthUserView }
+  >(res);
+  if (data.requiresTwoFactor === true) {
+    return { requiresTwoFactor: true, challenge: data.challenge };
+  }
+  invalidatePublishedExerciseCache();
+  invalidateCache('admin:');
+  invalidateCache('inst:');
+  return { requiresTwoFactor: false, user: data.user };
+}
+
+export async function verifyRegistrationOtp(payload: {
+  challengeToken: string;
+  code: string;
+  trustDevice?: boolean;
+}): Promise<AuthUserView> {
+  const res = await apiFetch<unknown>('/api/auth/verify-registration', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
@@ -443,11 +496,12 @@ export async function registerAccount(payload: RegisterRequest): Promise<AuthUse
   return unwrapData<{ user: AuthUserView }>(res).user;
 }
 
-export async function loginAccount(payload: {
-  email: string;
-  password: string;
+export async function verifyLogin2fa(payload: {
+  challengeToken: string;
+  code: string;
+  trustDevice?: boolean;
 }): Promise<AuthUserView> {
-  const res = await apiFetch<unknown>('/api/auth/login', {
+  const res = await apiFetch<unknown>('/api/auth/verify-2fa', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
@@ -455,6 +509,45 @@ export async function loginAccount(payload: {
   invalidateCache('admin:');
   invalidateCache('inst:');
   return unwrapData<{ user: AuthUserView }>(res).user;
+}
+
+export async function resendAuthOtp(challengeToken: string): Promise<TwoFactorChallengeView> {
+  const res = await apiFetch<unknown>('/api/auth/resend-otp', {
+    method: 'POST',
+    body: JSON.stringify({ challengeToken })
+  });
+  return unwrapData<{ challenge: TwoFactorChallengeView }>(res).challenge;
+}
+
+export async function beginTotpSetup(): Promise<TotpSetupPayload> {
+  const res = await apiFetch<unknown>('/api/auth/2fa/totp/setup', {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+  return unwrapData<TotpSetupPayload>(res);
+}
+
+export async function confirmTotpSetup(code: string): Promise<AuthUserView> {
+  const res = await apiFetch<unknown>('/api/auth/2fa/totp/verify', {
+    method: 'POST',
+    body: JSON.stringify({ code })
+  });
+  return unwrapData<{ user: AuthUserView }>(res).user;
+}
+
+export async function disableTotp(currentPassword: string): Promise<AuthUserView> {
+  const res = await apiFetch<unknown>('/api/auth/2fa/totp/disable', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword })
+  });
+  return unwrapData<{ user: AuthUserView }>(res).user;
+}
+
+export async function revokeTrustedDevices(): Promise<{ revokedCount: number }> {
+  const res = await apiFetch<unknown>('/api/auth/trusted-devices', {
+    method: 'DELETE'
+  });
+  return unwrapData<{ revokedCount: number }>(res);
 }
 
 export async function logoutAccount(): Promise<void> {

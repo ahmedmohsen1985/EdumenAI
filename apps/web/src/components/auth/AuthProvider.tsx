@@ -15,7 +15,9 @@ import {
   loginAccount,
   logoutAccount,
   registerAccount,
-  type AuthSessionPayload
+  type AuthSessionPayload,
+  type LoginAccountResult,
+  type RegisterAccountResult
 } from '../../lib/api';
 
 export interface AuthContextValue {
@@ -29,8 +31,10 @@ export interface AuthContextValue {
   isLoading: boolean;
   /** Re-fetch `/api/auth/me`. Resolves with the fresh user (or null). */
   refreshAuth: () => Promise<AuthUserView | null>;
-  login: (email: string, password: string) => Promise<AuthUserView>;
-  register: (payload: RegisterRequest) => Promise<AuthUserView>;
+  login: (email: string, password: string) => Promise<LoginAccountResult>;
+  register: (payload: RegisterRequest) => Promise<RegisterAccountResult>;
+  /** Hydrate state immediately after 2FA/OTP verification completes and refresh session metadata. */
+  completeAuthSession: (user: AuthUserView) => void;
   logout: () => Promise<void>;
   /** Locally override the unread badge (e.g. after marking notifications read). */
   setUnreadNotificationCount: (count: number) => void;
@@ -59,7 +63,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       if (mountedRef.current) setSession(next);
       return next.user;
     } catch {
-      // Network/API failure: treat as signed out without blocking the UI.
       if (mountedRef.current) setSession(EMPTY_SESSION);
       return null;
     } finally {
@@ -75,24 +78,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     };
   }, [refreshAuth]);
 
-  const login = useCallback(
-    async (email: string, password: string): Promise<AuthUserView> => {
-      const user = await loginAccount({ email, password });
+  const completeAuthSession = useCallback(
+    (user: AuthUserView): void => {
       setSession((prev) => ({ ...prev, user }));
       void refreshAuth();
-      return user;
     },
     [refreshAuth]
   );
 
-  const register = useCallback(
-    async (payload: RegisterRequest): Promise<AuthUserView> => {
-      const user = await registerAccount(payload);
-      setSession((prev) => ({ ...prev, user }));
-      void refreshAuth();
-      return user;
+  const login = useCallback(
+    async (email: string, password: string): Promise<LoginAccountResult> => {
+      const result = await loginAccount({ email, password });
+      if (!result.requiresTwoFactor) {
+        completeAuthSession(result.user);
+      }
+      return result;
     },
-    [refreshAuth]
+    [completeAuthSession]
+  );
+
+  const register = useCallback(
+    async (payload: RegisterRequest): Promise<RegisterAccountResult> => {
+      const result = await registerAccount(payload);
+      if (!result.requiresVerification) {
+        completeAuthSession(result.user);
+      }
+      return result;
+    },
+    [completeAuthSession]
   );
 
   const logout = useCallback(async (): Promise<void> => {
@@ -120,10 +133,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       refreshAuth,
       login,
       register,
+      completeAuthSession,
       logout,
       setUnreadNotificationCount
     }),
-    [session, isLoading, refreshAuth, login, register, logout, setUnreadNotificationCount]
+    [
+      session,
+      isLoading,
+      refreshAuth,
+      login,
+      register,
+      completeAuthSession,
+      logout,
+      setUnreadNotificationCount
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

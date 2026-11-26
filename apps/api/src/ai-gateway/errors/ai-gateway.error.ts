@@ -29,6 +29,7 @@ export interface AiAdapterParams {
   systemPrompt: string;
   userPrompt: string;
   file: AiFilePayload | null;
+  files?: AiFilePayload[] | null;
   jsonSchema: Record<string, unknown> | null;
   schemaName: string;
   temperature: number;

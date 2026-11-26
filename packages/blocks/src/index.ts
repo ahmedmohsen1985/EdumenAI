@@ -12,5 +12,6 @@ export { dropdownBlockDefinition } from './blocks/dropdown.block.js';
 export { textareaBlockDefinition } from './blocks/textarea.block.js';
 export { richtextBlockDefinition } from './blocks/richtext.block.js';
 export { fileUploadOcrBlockDefinition } from './blocks/file-upload-ocr.block.js';
+export { mediaUploadBlockDefinition } from './blocks/media-upload.block.js';
 export { examinerEvaluationBlockDefinition } from './blocks/examiner-evaluation.block.js';
 export { actionButtonBlockDefinition } from './blocks/action-button.block.js';

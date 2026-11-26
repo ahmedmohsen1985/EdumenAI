@@ -61,6 +61,7 @@ export interface InvokeAiModelParams {
   systemPrompt?: string;
   userPrompt?: string;
   file?: AiFilePayload | null;
+  files?: AiFilePayload[] | null;
   jsonSchema?: Record<string, unknown> | null;
   schemaName?: string;
   temperature?: number;
@@ -87,6 +88,7 @@ export async function invokeAiModel({
   systemPrompt = '',
   userPrompt = '',
   file = null,
+  files = null,
   jsonSchema = null,
   schemaName = 'marking_report',
   temperature = 0.0,
@@ -142,6 +144,9 @@ export async function invokeAiModel({
     `[AI Gateway] [${taskType.toUpperCase()}] ${operationName}: invoking '${model}' on ${providerLabel}`
   );
 
+  const resolvedFiles =
+    Array.isArray(files) && files.length > 0 ? files : file ? [file] : [];
+
   const startedAt = Date.now();
   try {
     const rawOutput = await adapter({
@@ -152,7 +157,8 @@ export async function invokeAiModel({
       model,
       systemPrompt,
       userPrompt,
-      file,
+      file: resolvedFiles[0] ?? null,
+      files: resolvedFiles,
       jsonSchema,
       schemaName,
       temperature: effectiveTemperature,

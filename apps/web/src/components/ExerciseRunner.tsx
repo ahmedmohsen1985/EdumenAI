@@ -14,6 +14,7 @@ import {
 import type {
   IntegrityEventType,
   IntegrityLog,
+  MediaAttachment,
   TemplateBlock,
   TemplateConfig,
   TranscriptionMeta
@@ -83,6 +84,51 @@ function isTranscriptionMeta(value: unknown): value is TranscriptionMeta {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   return typeof record.pages_detected === 'number';
+}
+
+function isMediaAttachment(value: unknown): value is MediaAttachment {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.mimeType === 'string' &&
+    typeof record.fileName === 'string' &&
+    (record.source === 'preset' || record.source === 'student')
+  );
+}
+
+function collectMediaAttachments(
+  blocks: readonly TemplateBlock[],
+  values: BlockFormValues
+): MediaAttachment[] {
+  const attachments: MediaAttachment[] = [];
+  for (const b of blocks) {
+    if (b.type !== 'media_upload') continue;
+    const val = b.fieldKey ? values[b.fieldKey] : undefined;
+    if (isMediaAttachment(val)) {
+      attachments.push(val);
+      continue;
+    }
+    const presetUrl =
+      typeof b.props?.presetImageDataUrl === 'string' ? b.props.presetImageDataUrl.trim() : '';
+    if (presetUrl) {
+      const presetName =
+        typeof b.props?.presetImageName === 'string' && b.props.presetImageName.trim()
+          ? b.props.presetImageName.trim()
+          : b.label || 'Stimulus Media';
+      const presetMime =
+        typeof b.props?.presetImageMimeType === 'string' && b.props.presetImageMimeType.trim()
+          ? b.props.presetImageMimeType.trim()
+          : 'image/jpeg';
+      attachments.push({
+        dataUrl: presetUrl,
+        mimeType: presetMime,
+        fileName: presetName,
+        source: 'preset',
+        presetBlockId: b.id
+      });
+    }
+  }
+  return attachments.slice(0, 4);
 }
 
 export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElement {
@@ -337,9 +383,18 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
       for (const b of filteredTemplateSchema.blocks) {
         if (b.required && b.fieldKey) {
           const val = values[b.fieldKey];
-          const strVal = typeof val === 'string' ? val.trim() : '';
-          if (!strVal) {
-            nextErrors[b.fieldKey] = `${b.label || b.fieldKey} is required.`;
+          if (b.type === 'media_upload') {
+            const hasPreset =
+              typeof b.props?.presetImageDataUrl === 'string' &&
+              b.props.presetImageDataUrl.trim().length > 0;
+            if (!isMediaAttachment(val) && !hasPreset) {
+              nextErrors[b.fieldKey] = `${b.label || b.fieldKey} is required.`;
+            }
+          } else {
+            const strVal = typeof val === 'string' ? val.trim() : '';
+            if (!strVal) {
+              nextErrors[b.fieldKey] = `${b.label || b.fieldKey} is required.`;
+            }
           }
         }
       }
@@ -403,9 +458,12 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
         'final_text'
       ]);
 
-      if (!taskPrompt || !studentText) {
+      const mediaAttachments = collectMediaAttachments(filteredTemplateSchema.blocks, values);
+
+      if (!studentText || (!taskPrompt.trim() && mediaAttachments.length === 0)) {
         setSubmitError({
-          message: 'Both the task prompt and student response text are required for evaluation.'
+          message:
+            'A student response and either a task prompt or attached stimulus media are required for evaluation.'
         });
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
@@ -432,6 +490,7 @@ export function ExerciseRunner({ code }: ExerciseRunnerProps): React.ReactElemen
           rawText: (studentTextKey ? rawOcrTexts[studentTextKey] : undefined) || studentText,
           finalText: studentText,
           ...(transcriptionMeta ? { transcriptionMeta } : {}),
+          ...(mediaAttachments.length > 0 ? { mediaAttachments } : {}),
           formData: values,
           ...(evalBlock?.bindings?.promptKeys
             ? { promptKeys: evalBlock.bindings.promptKeys }

@@ -63,6 +63,7 @@ export async function callGoogleAdapter({
   systemPrompt,
   userPrompt,
   file,
+  files,
   jsonSchema,
   temperature,
   maxOutputTokens,
@@ -70,12 +71,17 @@ export async function callGoogleAdapter({
   reasoningConfig
 }: AiAdapterParams): Promise<AiAdapterResult> {
   const ai = getGoogleClient(apiKey);
-  const contents = file
-    ? [
-        { inlineData: { data: file.base64, mimeType: file.mimeType } },
-        { text: userPrompt }
-      ]
-    : [{ role: 'user', parts: [{ text: userPrompt }] }];
+  const resolvedFiles =
+    Array.isArray(files) && files.length > 0 ? files : file ? [file] : [];
+  const contents =
+    resolvedFiles.length > 0
+      ? [
+          ...resolvedFiles.map((f) => ({
+            inlineData: { data: f.base64, mimeType: f.mimeType }
+          })),
+          { text: userPrompt }
+        ]
+      : [{ role: 'user', parts: [{ text: userPrompt }] }];
 
   const reqConfig: GenerateContentConfig = {
     temperature,

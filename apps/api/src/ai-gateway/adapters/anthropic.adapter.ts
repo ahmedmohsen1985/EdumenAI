@@ -26,6 +26,7 @@ export async function callAnthropicAdapter({
   systemPrompt,
   userPrompt,
   file,
+  files,
   jsonSchema,
   schemaName,
   temperature,
@@ -41,15 +42,17 @@ export async function callAnthropicAdapter({
     'anthropic-version': '2023-06-01'
   };
 
+  const resolvedFiles =
+    Array.isArray(files) && files.length > 0 ? files : file ? [file] : [];
   const contentBlocks: Array<Record<string, unknown>> = [];
-  if (file) {
-    if (file.mimeType === 'application/pdf') {
+  for (const f of resolvedFiles) {
+    if (f.mimeType === 'application/pdf') {
       contentBlocks.push({
         type: 'document',
         source: {
           type: 'base64',
           media_type: 'application/pdf',
-          data: file.base64
+          data: f.base64
         }
       });
     } else {
@@ -57,8 +60,8 @@ export async function callAnthropicAdapter({
         type: 'image',
         source: {
           type: 'base64',
-          media_type: file.mimeType,
-          data: file.base64
+          media_type: f.mimeType,
+          data: f.base64
         }
       });
     }

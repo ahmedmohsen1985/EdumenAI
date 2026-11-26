@@ -19,17 +19,24 @@ model User {
   className             String?
   parentPhone           String?
   parentTelegramId      String?
-  bio                   String?              @db.Text
-  creditBalance         Int                  @default(0)
-  sponsorStudentCredits Boolean              @default(false)
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  submissions           Submission[]
-  instructorSubmissions Submission[]         @relation("InstructorSubmissions")
-  providerConfigs       AIProviderConfig[]
-  sessions              Session[]
-  passwordResetTokens   PasswordResetToken[]
-  studentEnrollments    StudentInstructor[]  @relation("StudentEnrollments")
+  bio                        String?              @db.Text
+  creditBalance              Int                  @default(0)
+  sponsorStudentCredits      Boolean              @default(false)
+  emailVerified              Boolean              @default(true)
+  twoFactorEnabled           Boolean              @default(true)
+  twoFactorMethod            TwoFactorMethod      @default(EMAIL_OTP)
+  totpSecretEncrypted        String?
+  totpPendingSecretEncrypted String?
+  createdAt                  DateTime             @default(now())
+  updatedAt                  DateTime             @updatedAt
+  submissions                Submission[]
+  instructorSubmissions      Submission[]         @relation("InstructorSubmissions")
+  providerConfigs            AIProviderConfig[]
+  sessions                   Session[]
+  passwordResetTokens        PasswordResetToken[]
+  authChallenges             AuthChallenge[]
+  trustedDevices             TrustedDevice[]
+  studentEnrollments         StudentInstructor[]  @relation("StudentEnrollments")
   instructorEnrollments StudentInstructor[]  @relation("InstructorEnrollments")
   notifications         Notification[]
   ownedExercises          Exercise[]           @relation("ExerciseOwner")
@@ -79,6 +86,48 @@ enum VersionStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+}
+
+enum TwoFactorMethod {
+  EMAIL_OTP
+  TOTP
+}
+
+enum OtpPurpose {
+  REGISTER_VERIFY
+  LOGIN_2FA
+}
+
+model AuthChallenge {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose       OtpPurpose
+  method        TwoFactorMethod
+  challengeHash String          @unique
+  codeHash      String?
+  attempts      Int             @default(0)
+  maxAttempts   Int             @default(5)
+  lastSentAt    DateTime        @default(now())
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime        @default(now())
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+model TrustedDevice {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Session {

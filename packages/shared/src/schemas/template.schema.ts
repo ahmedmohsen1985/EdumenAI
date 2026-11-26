@@ -10,6 +10,7 @@ export const BUILT_IN_BLOCK_TYPES = [
   'textarea',
   'richtext',
   'file_upload_ocr',
+  'media_upload',
   'action_button',
   'examiner_evaluation'
 ] as const;

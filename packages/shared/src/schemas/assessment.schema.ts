@@ -35,20 +35,45 @@ export const TranscribeResponseSchema = z.object({
   })
 });
 
-export const EvaluateRequestSchema = z.object({
-  student: StudentInfoSchema,
-  taskPrompt: z.string().min(1),
-  rawText: z.string().optional(),
-  finalText: z.string().min(1),
-  transcriptionMeta: TranscriptionMetaSchema.optional(),
-  versionId: z.string().optional(),
-  isPreview: z.boolean().optional(),
-  formData: z.record(z.unknown()).optional(),
-  promptKeys: z.array(z.string()).optional(),
-  telegramTargetIds: z.array(z.string()).optional(),
-  instructorId: z.string().min(1).nullable().optional(),
-  integrityLog: IntegrityLogSchema.optional()
+export const MediaAttachmentSchema = z.object({
+  dataUrl: z.string().min(10).max(8_000_000).optional(),
+  mimeType: z.string().min(3).max(120),
+  fileName: z.string().min(1).max(255),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  source: z.enum(['preset', 'student']).default('student'),
+  presetBlockId: z.string().optional(),
+  omittedFromStorage: z.boolean().optional()
 });
+export type MediaAttachment = z.infer<typeof MediaAttachmentSchema>;
+
+export const EvaluateRequestSchema = z
+  .object({
+    student: StudentInfoSchema,
+    taskPrompt: z.string().optional().default(''),
+    rawText: z.string().optional(),
+    finalText: z.string().min(1),
+    transcriptionMeta: TranscriptionMetaSchema.optional(),
+    versionId: z.string().optional(),
+    isPreview: z.boolean().optional(),
+    formData: z.record(z.unknown()).optional(),
+    promptKeys: z.array(z.string()).optional(),
+    telegramTargetIds: z.array(z.string()).optional(),
+    instructorId: z.string().min(1).nullable().optional(),
+    integrityLog: IntegrityLogSchema.optional(),
+    mediaAttachments: z.array(MediaAttachmentSchema).max(4).optional()
+  })
+  .superRefine((val, ctx) => {
+    if (
+      !val.taskPrompt?.trim() &&
+      (!val.mediaAttachments || val.mediaAttachments.length === 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Either a task prompt or an attached media stimulus is required for evaluation.',
+        path: ['taskPrompt']
+      });
+    }
+  });
 
 export const EvaluateResponseSchema = z.object({
   success: z.literal(true),
@@ -93,6 +118,7 @@ export const PersistedReportSchema = z.object({
   isPreview: z.boolean().optional(),
   formData: z.record(z.unknown()).nullable().optional(),
   integrityLog: IntegrityLogSchema.nullable().optional(),
+  mediaAttachments: z.array(MediaAttachmentSchema).nullable().optional(),
   marks: MarkingReportSchema.shape.marks,
   justification: MarkingReportSchema.shape.justification,
   errors: MarkingReportSchema.shape.errors,

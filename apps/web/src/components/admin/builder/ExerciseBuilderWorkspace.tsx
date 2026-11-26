@@ -40,6 +40,7 @@ import {
   Rocket,
   Save,
   ShieldCheck,
+  ShieldOff,
   SlidersHorizontal
 } from 'lucide-react';
 import {
@@ -82,7 +83,9 @@ function createBlockInstance(
   const defaultFieldKey = !['richtext', 'examiner_evaluation', 'action_button'].includes(
     definition.type
   )
-    ? `${definition.type}_${existingBlocks.length + 1}`
+    ? definition.type === 'media_upload'
+      ? `media_stimulus_${existingBlocks.filter((b) => b.type === 'media_upload').length + 1}`
+      : `${definition.type}_${existingBlocks.length + 1}`
     : undefined;
 
   let bindings = definition.defaultBindings ? { ...definition.defaultBindings } : undefined;
@@ -637,72 +640,90 @@ export function ExerciseBuilderWorkspace({
 
   return (
     <PageEntrance className="space-y-5">
-      {/* Top Builder Toolbar */}
-      <div className="glass-panel space-y-4 rounded-2xl p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+      {/* 2-Row Studio Header */}
+      <div className="glass-panel-strong space-y-3 rounded-2xl p-4">
+        {/* Row 1: Single Horizontal Action Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          {/* Left cluster */}
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
             <Link
               href={backHref}
-              className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !px-3 !py-1.5 !text-xs"
+              className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !rounded-full !px-3 !py-1.5 !text-xs"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Exercises
             </Link>
 
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-bold tracking-tight text-zinc-900">
-                  {title || exercise.title}
-                </h1>
-                <span className="rounded-md bg-zinc-900 px-2 py-0.5 text-[11px] font-bold uppercase text-white">
-                  {skill}
-                </span>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    activeVersion.status === 'DRAFT'
-                      ? 'border border-amber-200 bg-amber-50 text-amber-800'
-                      : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
-                  }`}
-                >
-                  {activeVersion.status} v{activeVersion.version}
-                </span>
-                {isDirty && (
-                  <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700">
-                    Unsaved changes
-                  </span>
-                )}
-              </div>
-              <p className="font-mono text-xs text-zinc-500">code: {exercise.code}</p>
-            </div>
+            <h1 className="max-w-xs truncate text-base font-extrabold tracking-tight text-zinc-950 sm:max-w-md sm:text-lg">
+              {title || exercise.title}
+            </h1>
+
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-0.5 text-[11px] font-bold uppercase text-white">
+              {skill}
+            </span>
+
+            <span
+              className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                activeVersion.status === 'DRAFT'
+                  ? 'border-amber-200 bg-amber-50/90 text-amber-800'
+                  : 'border-emerald-200 bg-emerald-50/90 text-emerald-700'
+              }`}
+            >
+              {activeVersion.status === 'DRAFT' ? 'Draft' : 'Published'} v{activeVersion.version}
+            </span>
+
+            <span
+              className="hidden max-w-[160px] truncate rounded-full border border-zinc-200/80 bg-white/60 px-2.5 py-0.5 font-mono text-[11px] text-zinc-500 xl:inline-block"
+              title={exercise.code}
+            >
+              {exercise.code}
+            </span>
+
+            {isDirty && (
+              <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-200/90 bg-amber-50/90 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                Unsaved
+              </span>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Right cluster */}
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               role="switch"
               aria-checked={integrityEnabled}
+              aria-label={
+                integrityEnabled
+                  ? 'Exam Integrity Protection is ON (click to disable)'
+                  : 'Exam Integrity Protection is OFF (click to enable)'
+              }
+              title={
+                integrityEnabled
+                  ? 'Exam Integrity Protection: ON (blocks copy/paste/right-click & tracks tab switches)'
+                  : 'Exam Integrity Protection: OFF (click to enable)'
+              }
               onClick={() => {
                 setIntegrityEnabled((prev) => !prev);
                 setIsDirty(true);
               }}
-              title="Block copy/paste/right-click and record tab switches during student assessments"
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-semibold transition-all duration-200 ${
+              className={`relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-all duration-200 focus:outline-none focus-visible:ring-4 focus-visible:ring-zinc-900/15 ${
                 integrityEnabled
-                  ? 'border-emerald-200/90 bg-emerald-50/85 text-emerald-800 shadow-sm hover:bg-emerald-100/80'
-                  : 'glass-btn-secondary !px-3 !py-2 !text-xs text-zinc-500'
+                  ? 'border-emerald-200/90 bg-emerald-50/90 text-emerald-700 shadow-sm hover:bg-emerald-100/85'
+                  : 'glass-btn-secondary !h-9 !w-9 !p-0 text-zinc-400 hover:text-zinc-700'
               }`}
             >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>Exam Integrity Protection</span>
-              <span
-                className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase ${
-                  integrityEnabled
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-zinc-200/80 text-zinc-600'
-                }`}
-              >
-                {integrityEnabled ? 'On' : 'Off'}
-              </span>
+              {integrityEnabled ? (
+                <ShieldCheck className="h-4 w-4" />
+              ) : (
+                <ShieldOff className="h-4 w-4" />
+              )}
+              {integrityEnabled && (
+                <span
+                  aria-hidden="true"
+                  className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-50"
+                />
+              )}
             </button>
 
             <button
@@ -713,7 +734,7 @@ export function ExerciseBuilderWorkspace({
               }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              Metadata &amp; Badges
+              <span>Settings</span>
             </button>
 
             <button
@@ -727,17 +748,7 @@ export function ExerciseBuilderWorkspace({
               ) : (
                 <Save className="h-3.5 w-3.5" />
               )}
-              Save Draft
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void handleOpenPreview()}
-              disabled={isSaving || isPublishing}
-              className="glass-btn-secondary !inline-flex !items-center !gap-1.5 !border-zinc-300/90 !px-3.5 !py-2 !text-xs disabled:opacity-60"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              Live Preview
+              <span>Save Draft</span>
             </button>
 
             <button
@@ -751,12 +762,12 @@ export function ExerciseBuilderWorkspace({
               ) : (
                 <Rocket className="h-3.5 w-3.5" />
               )}
-              Publish
+              <span>Publish</span>
             </button>
           </div>
         </div>
 
-        {/* Collapsible Metadata & Settings Drawer */}
+        {/* Collapsible Metadata & Badges Drawer */}
         <AnimatePresence initial={false}>
           {showMetaDrawer && (
             <motion.div
@@ -869,7 +880,7 @@ export function ExerciseBuilderWorkspace({
           )}
         </AnimatePresence>
 
-        {/* Sub-Tabs */}
+        {/* Row 2: Clean 3-Tab Workspace Switcher */}
         <div className="border-t border-zinc-200/70 pt-3">
           <div
             role="tablist"
@@ -881,7 +892,7 @@ export function ExerciseBuilderWorkspace({
               isActive={activeTab === 'canvas'}
               onClick={() => setActiveTab('canvas')}
               asTab
-              className="!py-2 !text-xs"
+              className="!py-1.5 !text-xs"
             >
               <Layers className="h-3.5 w-3.5" />
               Canvas Builder ({templateSchema.blocks.length})
@@ -892,10 +903,10 @@ export function ExerciseBuilderWorkspace({
               isActive={activeTab === 'prompts'}
               onClick={() => setActiveTab('prompts')}
               asTab
-              className="!py-2 !text-xs"
+              className="!py-1.5 !text-xs"
             >
               <FileCode2 className="h-3.5 w-3.5" />
-              Global Prompt Manager ({promptEntries.length})
+              Prompt Manager ({promptEntries.length})
             </SlidingTabButton>
 
             <SlidingTabButton
@@ -903,10 +914,10 @@ export function ExerciseBuilderWorkspace({
               isActive={activeTab === 'preview'}
               onClick={() => void handleOpenPreview()}
               asTab
-              className="!py-2 !text-xs"
+              className="!py-1.5 !text-xs"
             >
               <Eye className="h-3.5 w-3.5" />
-              Live Interactive Preview
+              Live Preview
             </SlidingTabButton>
           </div>
         </div>

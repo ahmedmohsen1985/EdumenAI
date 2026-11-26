@@ -13,6 +13,7 @@ import {
 } from '@edumenai/blocks';
 import type {
   EvaluatePersistedResponse,
+  MediaAttachment,
   PromptEntry,
   TemplateBlock,
   TemplateConfig,
@@ -52,6 +53,51 @@ function getStringField(values: BlockFormValues, keys: string[]): string {
 function isTranscriptionMeta(value: unknown): value is TranscriptionMeta {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   return typeof (value as Record<string, unknown>).pages_detected === 'number';
+}
+
+function isMediaAttachment(value: unknown): value is MediaAttachment {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.mimeType === 'string' &&
+    typeof record.fileName === 'string' &&
+    (record.source === 'preset' || record.source === 'student')
+  );
+}
+
+function collectPreviewMediaAttachments(
+  blocks: readonly TemplateBlock[],
+  values: BlockFormValues
+): MediaAttachment[] {
+  const attachments: MediaAttachment[] = [];
+  for (const b of blocks) {
+    if (b.type !== 'media_upload') continue;
+    const val = b.fieldKey ? values[b.fieldKey] : undefined;
+    if (isMediaAttachment(val)) {
+      attachments.push(val);
+      continue;
+    }
+    const presetUrl =
+      typeof b.props?.presetImageDataUrl === 'string' ? b.props.presetImageDataUrl.trim() : '';
+    if (presetUrl) {
+      const presetName =
+        typeof b.props?.presetImageName === 'string' && b.props.presetImageName.trim()
+          ? b.props.presetImageName.trim()
+          : b.label || 'Stimulus Media';
+      const presetMime =
+        typeof b.props?.presetImageMimeType === 'string' && b.props.presetImageMimeType.trim()
+          ? b.props.presetImageMimeType.trim()
+          : 'image/jpeg';
+      attachments.push({
+        dataUrl: presetUrl,
+        mimeType: presetMime,
+        fileName: presetName,
+        source: 'preset',
+        presetBlockId: b.id
+      });
+    }
+  }
+  return attachments.slice(0, 4);
 }
 
 export function LivePreviewPane({
@@ -141,9 +187,18 @@ export function LivePreviewPane({
       for (const b of templateSchema.blocks) {
         if (b.required && b.fieldKey) {
           const val = values[b.fieldKey];
-          const strVal = typeof val === 'string' ? val.trim() : '';
-          if (!strVal) {
-            nextErrors[b.fieldKey] = `${b.label || b.fieldKey} is required.`;
+          if (b.type === 'media_upload') {
+            const hasPreset =
+              typeof b.props?.presetImageDataUrl === 'string' &&
+              b.props.presetImageDataUrl.trim().length > 0;
+            if (!isMediaAttachment(val) && !hasPreset) {
+              nextErrors[b.fieldKey] = `${b.label || b.fieldKey} is required.`;
+            }
+          } else {
+            const strVal = typeof val === 'string' ? val.trim() : '';
+            if (!strVal) {
+              nextErrors[b.fieldKey] = `${b.label || b.fieldKey} is required.`;
+            }
           }
         }
       }
@@ -207,10 +262,12 @@ export function LivePreviewPane({
         'final_text'
       ]);
 
-      if (!taskPrompt || !studentText) {
+      const mediaAttachments = collectPreviewMediaAttachments(templateSchema.blocks, values);
+
+      if (!studentText || (!taskPrompt.trim() && mediaAttachments.length === 0)) {
         setPreviewError({
           message:
-            'Both a task prompt and student response field are required for AI evaluation. Check your inputFieldMap bindings.'
+            'A student response and either a task prompt or attached stimulus media are required for AI evaluation.'
         });
         return;
       }
@@ -237,6 +294,7 @@ export function LivePreviewPane({
             rawText: (studentTextKey ? rawOcrTexts[studentTextKey] : undefined) || studentText,
             finalText: studentText,
             ...(transcriptionMeta ? { transcriptionMeta } : {}),
+            ...(mediaAttachments.length > 0 ? { mediaAttachments } : {}),
             versionId,
             isPreview: true,
             formData: values,

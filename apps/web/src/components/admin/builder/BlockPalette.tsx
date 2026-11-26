@@ -8,6 +8,7 @@ import {
   ChevronDown,
   FileText,
   GripVertical,
+  Image as ImageIcon,
   Plus,
   ScanText,
   Send,
@@ -27,6 +28,8 @@ function renderBlockIcon(iconName: string): React.ReactElement {
       return <FileText className="h-4 w-4" />;
     case 'ScanText':
       return <ScanText className="h-4 w-4" />;
+    case 'Image':
+      return <ImageIcon className="h-4 w-4" />;
     case 'Sparkles':
       return <Sparkles className="h-4 w-4" />;
     case 'Send':

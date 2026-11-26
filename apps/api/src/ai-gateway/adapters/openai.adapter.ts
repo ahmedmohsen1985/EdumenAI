@@ -44,6 +44,7 @@ export async function callOpenAiCompatibleAdapter({
   systemPrompt,
   userPrompt,
   file,
+  files,
   jsonSchema,
   schemaName,
   temperature,
@@ -74,26 +75,30 @@ export async function callOpenAiCompatibleAdapter({
     headers['X-Title'] = appName;
   }
 
+  const resolvedFiles =
+    Array.isArray(files) && files.length > 0 ? files : file ? [file] : [];
+
   let userContent: string | Array<Record<string, unknown>> = userPrompt;
-  if (file) {
-    const fileBlock: Record<string, unknown> =
-      file.mimeType === 'application/pdf'
+  if (resolvedFiles.length > 0) {
+    const fileBlocks: Array<Record<string, unknown>> = resolvedFiles.map((f) =>
+      f.mimeType === 'application/pdf'
         ? {
             type: 'file',
             file: {
-              filename: file.filename || 'document.pdf',
-              file_data: `data:application/pdf;base64,${file.base64}`
+              filename: f.filename || 'document.pdf',
+              file_data: `data:application/pdf;base64,${f.base64}`
             }
           }
         : {
             type: 'image_url',
             image_url: {
-              url: `data:${file.mimeType};base64,${file.base64}`,
+              url: `data:${f.mimeType};base64,${f.base64}`,
               detail: 'high'
             }
-          };
+          }
+    );
 
-    userContent = [fileBlock, { type: 'text', text: userPrompt }];
+    userContent = [...fileBlocks, { type: 'text', text: userPrompt }];
   }
 
   const messages: Array<Record<string, unknown>> = [];
@@ -147,7 +152,7 @@ export async function callOpenAiCompatibleAdapter({
       }
     }
 
-    if (provider === 'openrouter' && file?.mimeType === 'application/pdf') {
+    if (provider === 'openrouter' && resolvedFiles.some((f) => f.mimeType === 'application/pdf')) {
       const configuredPdfEngine =
         typeof extraConfig?.pdfEngine === 'string'
           ? extraConfig.pdfEngine

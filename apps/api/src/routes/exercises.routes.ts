@@ -2,9 +2,14 @@ import path from 'node:path';
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import type { User } from '@prisma/client';
 import multer from 'multer';
-import { EvaluateRequestSchema, type StudentInfo } from '@edumenai/shared';
+import {
+  EvaluateRequestSchema,
+  type MediaAttachment,
+  type StudentInfo
+} from '@edumenai/shared';
 import {
   getPublishedExerciseByCode,
+  HttpError,
   listPublishedExercises,
   resolveVersionForExecution
 } from '../services/exercise.service.js';
@@ -16,7 +21,7 @@ import {
 import { isAdminAuthorized } from '../middleware/admin-auth.middleware.js';
 import { prisma } from '../lib/prisma.js';
 import { evaluateAssessment, runDynamicOcr } from '../ai-gateway/evaluation.pipeline.js';
-import { AiServiceError } from '../ai-gateway/index.js';
+import { AiServiceError, type AiFilePayload } from '../ai-gateway/index.js';
 import {
   notifyParent,
   notifyStudent,
@@ -25,6 +30,133 @@ import {
   sendTeacherQuotaAlert
 } from '../services/telegram.service.js';
 import { logger } from '../lib/logger.js';
+
+const MAX_MEDIA_ATTACHMENTS = 4;
+const MAX_MEDIA_BASE64_BYTES = 8 * 1024 * 1024;
+const MAX_PERSISTED_DATA_URL_LENGTH = 600_000;
+
+function buildAiFilePayload(
+  attachment: MediaAttachment,
+  fallbackIndex: number
+): AiFilePayload | null {
+  if (!attachment.dataUrl) {
+    return null;
+  }
+
+  const match = attachment.dataUrl.match(/^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/);
+  if (!match) {
+    throw new HttpError(
+      400,
+      `Invalid media data URL format for "${attachment.fileName}".`,
+      'INVALID_MEDIA_DATA_URL'
+    );
+  }
+
+  const mimeType = match[1].toLowerCase();
+  const base64 = match[2];
+
+  if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
+    throw new HttpError(
+      400,
+      `Unsupported media MIME type "${mimeType}". Only images and PDFs are supported.`,
+      'UNSUPPORTED_MEDIA_TYPE'
+    );
+  }
+
+  const estimatedBytes = Math.floor((base64.length * 3) / 4);
+  if (estimatedBytes > MAX_MEDIA_BASE64_BYTES) {
+    throw new HttpError(
+      400,
+      `Media attachment "${attachment.fileName}" exceeds the 8 MB limit.`,
+      'MEDIA_TOO_LARGE'
+    );
+  }
+
+  return {
+    base64,
+    mimeType,
+    filename: attachment.fileName || `stimulus-${fallbackIndex + 1}`
+  };
+}
+
+function sanitizeFormDataForStorage(
+  rawFormData: Record<string, unknown> | undefined,
+  resolvedMedia: MediaAttachment[]
+): Record<string, unknown> | undefined {
+  if (!rawFormData && resolvedMedia.length === 0) {
+    return undefined;
+  }
+
+  const cleaned: Record<string, unknown> = {};
+  if (rawFormData) {
+    for (const [key, value] of Object.entries(rawFormData)) {
+      if (
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        'dataUrl' in value &&
+        typeof (value as Record<string, unknown>).dataUrl === 'string' &&
+        ((value as Record<string, unknown>).dataUrl as string).length > 4096
+      ) {
+        const record = value as Record<string, unknown>;
+        cleaned[key] = {
+          source: record.source ?? 'student',
+          fileName: record.fileName ?? 'attachment',
+          mimeType: record.mimeType ?? 'application/octet-stream',
+          ...(typeof record.presetBlockId === 'string'
+            ? { presetBlockId: record.presetBlockId }
+            : {}),
+          ...(typeof record.sizeBytes === 'number' ? { sizeBytes: record.sizeBytes } : {})
+        };
+      } else {
+        cleaned[key] = value;
+      }
+    }
+  }
+
+  if (resolvedMedia.length > 0) {
+    cleaned._mediaAttachments = resolvedMedia.map((item): MediaAttachment => {
+      if (item.source === 'preset') {
+        return {
+          source: 'preset',
+          ...(item.presetBlockId ? { presetBlockId: item.presetBlockId } : {}),
+          fileName: item.fileName,
+          mimeType: item.mimeType
+        };
+      }
+
+      if (item.mimeType === 'application/pdf') {
+        return {
+          source: 'student',
+          mimeType: 'application/pdf',
+          fileName: item.fileName,
+          ...(typeof item.sizeBytes === 'number' ? { sizeBytes: item.sizeBytes } : {}),
+          omittedFromStorage: true
+        };
+      }
+
+      if (item.dataUrl && item.dataUrl.length <= MAX_PERSISTED_DATA_URL_LENGTH) {
+        return {
+          source: 'student',
+          dataUrl: item.dataUrl,
+          mimeType: item.mimeType,
+          fileName: item.fileName,
+          ...(typeof item.sizeBytes === 'number' ? { sizeBytes: item.sizeBytes } : {})
+        };
+      }
+
+      return {
+        source: 'student',
+        mimeType: item.mimeType,
+        fileName: item.fileName,
+        ...(typeof item.sizeBytes === 'number' ? { sizeBytes: item.sizeBytes } : {}),
+        omittedFromStorage: true
+      };
+    });
+  }
+
+  return cleaned;
+}
 
 const router = Router();
 
@@ -477,13 +609,97 @@ router.post(
         await checkCreditEligibility(authUser, resolvedInstructorId);
       }
 
+      const incomingAttachments: MediaAttachment[] = parsedBody.mediaAttachments ?? [];
+      const presetBlocksMap = new Map<
+        string,
+        { dataUrl: string; fileName: string; mimeType: string; fieldKey: string }
+      >();
+
+      for (const block of resolved.templateSchema.blocks) {
+        if (block.type !== 'media_upload') continue;
+        const blockProps = (block.props ?? {}) as Record<string, unknown>;
+        const presetDataUrl =
+          typeof blockProps.presetImageDataUrl === 'string'
+            ? blockProps.presetImageDataUrl.trim()
+            : '';
+        if (!presetDataUrl) continue;
+
+        presetBlocksMap.set(block.id, {
+          dataUrl: presetDataUrl,
+          fileName:
+            typeof blockProps.presetImageName === 'string' && blockProps.presetImageName.trim()
+              ? blockProps.presetImageName.trim()
+              : 'stimulus.jpg',
+          mimeType:
+            typeof blockProps.presetImageMimeType === 'string' &&
+            blockProps.presetImageMimeType.trim()
+              ? blockProps.presetImageMimeType.trim()
+              : 'image/jpeg',
+          fieldKey: block.fieldKey || block.id
+        });
+      }
+
+      const resolvedMediaAttachments: MediaAttachment[] = [];
+      const includedPresetIds = new Set<string>();
+
+      for (const item of incomingAttachments) {
+        if (item.source === 'preset' && item.presetBlockId) {
+          const preset = presetBlocksMap.get(item.presetBlockId);
+          if (preset) {
+            includedPresetIds.add(item.presetBlockId);
+            resolvedMediaAttachments.push({
+              source: 'preset',
+              presetBlockId: item.presetBlockId,
+              dataUrl: item.dataUrl || preset.dataUrl,
+              fileName: item.fileName || preset.fileName,
+              mimeType: item.mimeType || preset.mimeType
+            });
+            continue;
+          }
+        }
+        resolvedMediaAttachments.push(item);
+      }
+
+      for (const [blockId, preset] of presetBlocksMap.entries()) {
+        if (includedPresetIds.has(blockId)) continue;
+        const fieldVal = parsedBody.formData?.[preset.fieldKey];
+        const overriddenByStudent =
+          fieldVal &&
+          typeof fieldVal === 'object' &&
+          !Array.isArray(fieldVal) &&
+          (fieldVal as Record<string, unknown>).source === 'student';
+        if (overriddenByStudent) continue;
+
+        resolvedMediaAttachments.push({
+          source: 'preset',
+          presetBlockId: blockId,
+          dataUrl: preset.dataUrl,
+          fileName: preset.fileName,
+          mimeType: preset.mimeType
+        });
+      }
+
+      const cappedMedia = resolvedMediaAttachments.slice(0, MAX_MEDIA_ATTACHMENTS);
+      const aiFiles: AiFilePayload[] = [];
+      for (let idx = 0; idx < cappedMedia.length; idx += 1) {
+        const payload = buildAiFilePayload(cappedMedia[idx], idx);
+        if (payload) {
+          aiFiles.push(payload);
+        }
+      }
+
+      const persistedFormData = sanitizeFormDataForStorage(parsedBody.formData, cappedMedia);
+      const persistedTaskPrompt =
+        parsedBody.taskPrompt.trim() || 'Stimulus-based assessment (media attached)';
+
       const evaluationResult = await evaluateAssessment({
         studentName: resolvedStudent.name,
         taskPrompt: parsedBody.taskPrompt,
         studentText: parsedBody.finalText,
         ...(systemPrompts.length > 0 ? { systemPrompts } : {}),
         ...(markingSchema ? { markingSchema } : {}),
-        marksLimits
+        marksLimits,
+        ...(aiFiles.length > 0 ? { files: aiFiles } : {})
       });
 
       const persisted = await createEvaluatedSubmission({
@@ -492,12 +708,12 @@ router.post(
         studentId: authUser?.id ?? null,
         instructorId: resolvedInstructorId,
         student: resolvedStudent,
-        taskPrompt: parsedBody.taskPrompt,
+        taskPrompt: persistedTaskPrompt,
         rawText: parsedBody.rawText,
         finalText: parsedBody.finalText,
         transcriptionMeta: parsedBody.transcriptionMeta,
         isPreview,
-        formData: parsedBody.formData,
+        formData: persistedFormData,
         ...(parsedBody.integrityLog ? { integrityLog: parsedBody.integrityLog } : {}),
         evaluationResult
       });

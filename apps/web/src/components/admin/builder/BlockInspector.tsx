@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import type { PromptEntry, TelegramTargetView, TemplateBlock } from '@edumenai/shared';
-import { Settings2, Wand2 } from 'lucide-react';
+import { Image as ImageIcon, Loader2, Settings2, Trash2, UploadCloud, Wand2 } from 'lucide-react';
 
 interface BlockInspectorProps {
   block: TemplateBlock | null;
@@ -13,7 +13,14 @@ interface BlockInspectorProps {
 }
 
 const FIELD_MAP_KEYS: ReadonlyArray<{
-  key: 'studentName' | 'studentClass' | 'studentSchool' | 'studentTelegram' | 'taskPrompt' | 'studentText';
+  key:
+    | 'studentName'
+    | 'studentClass'
+    | 'studentSchool'
+    | 'studentTelegram'
+    | 'taskPrompt'
+    | 'studentText'
+    | 'mediaAttachment';
   label: string;
 }> = [
   { key: 'studentName', label: 'Student Name' },
@@ -21,7 +28,8 @@ const FIELD_MAP_KEYS: ReadonlyArray<{
   { key: 'studentSchool', label: 'Student School' },
   { key: 'studentTelegram', label: 'Student Telegram' },
   { key: 'taskPrompt', label: 'Task Prompt / Question' },
-  { key: 'studentText', label: 'Student Response / Article' }
+  { key: 'studentText', label: 'Student Response / Article' },
+  { key: 'mediaAttachment', label: 'Stimulus Media (Image / PDF)' }
 ];
 
 export function inferInputFieldMapFromCanvas(
@@ -41,6 +49,9 @@ export function inferInputFieldMapFromCanvas(
   const studentTelegram = pick(['student_telegram', 'telegram']);
   const taskPrompt = pick(['task_question', 'task_prompt', 'prompt']);
   const studentText = pick(['student_article', 'student_response', 'final_text']);
+  const mediaBlock = blocks.find((b) => b.type === 'media_upload' && b.fieldKey);
+  const mediaAttachment =
+    mediaBlock?.fieldKey ?? pick(['media_stimulus', 'stimulus_media', 'media_upload_1']);
 
   if (studentName) map.studentName = studentName;
   if (studentClass) map.studentClass = studentClass;
@@ -48,8 +59,57 @@ export function inferInputFieldMapFromCanvas(
   if (studentTelegram) map.studentTelegram = studentTelegram;
   if (taskPrompt) map.taskPrompt = taskPrompt;
   if (studentText) map.studentText = studentText;
+  if (mediaAttachment) map.mediaAttachment = mediaAttachment;
 
   return map;
+}
+
+async function compressPresetImage(
+  file: File
+): Promise<{ dataUrl: string; mimeType: string; fileName: string }> {
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('Failed to read selected image.'));
+    };
+    reader.onerror = () => reject(new Error('Failed to read selected image.'));
+    reader.readAsDataURL(file);
+  });
+
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('Invalid image file.'));
+      el.src = rawDataUrl;
+    });
+
+    const maxDim = 1024;
+    let width = img.naturalWidth || img.width;
+    let height = img.naturalHeight || img.height;
+    if (width > maxDim || height > maxDim) {
+      const scale = Math.min(maxDim / width, maxDim / height);
+      width = Math.max(1, Math.round(width * scale));
+      height = Math.max(1, Math.round(height * scale));
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return { dataUrl: rawDataUrl, mimeType: file.type || 'image/jpeg', fileName: file.name };
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const compressed = canvas.toDataURL('image/jpeg', 0.8);
+    return { dataUrl: compressed, mimeType: 'image/jpeg', fileName: file.name };
+  } catch {
+    return { dataUrl: rawDataUrl, mimeType: file.type || 'image/jpeg', fileName: file.name };
+  }
 }
 
 export function BlockInspector({
@@ -82,6 +142,10 @@ export function BlockInspector({
     () => allBlocks.filter((b) => b.type === 'examiner_evaluation'),
     [allBlocks]
   );
+
+  const presetFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isCompressingPreset, setIsCompressingPreset] = useState<boolean>(false);
+  const [presetError, setPresetError] = useState<string | null>(null);
 
   if (!block) {
     return (
@@ -707,6 +771,178 @@ export function BlockInspector({
           </div>
         </div>
       )}
+
+      {block.type === 'media_upload' && (() => {
+        const presetDataUrl = strProp('presetImageDataUrl');
+        const presetName = strProp('presetImageName') || 'Preset stimulus image';
+        const allowStudentUpload = boolProp('allowStudentUpload', true);
+        const acceptArr = Array.isArray(block.props?.accept)
+          ? (block.props.accept as unknown[]).filter((v): v is string => typeof v === 'string')
+          : ['image/*', 'application/pdf'];
+        const acceptMode =
+          acceptArr.includes('image/*') && acceptArr.includes('application/pdf')
+            ? 'both'
+            : acceptArr.includes('application/pdf')
+              ? 'pdf'
+              : 'images';
+
+        const handlePresetFileChange = async (
+          e: React.ChangeEvent<HTMLInputElement>
+        ): Promise<void> => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (!file) return;
+          if (!file.type.startsWith('image/')) {
+            setPresetError('Fixed preset stimuli must be an image file (JPG, PNG, or WebP).');
+            return;
+          }
+          setIsCompressingPreset(true);
+          setPresetError(null);
+          try {
+            const compressed = await compressPresetImage(file);
+            onChangeBlock({
+              ...block,
+              props: {
+                ...block.props,
+                presetImageDataUrl: compressed.dataUrl,
+                presetImageName: compressed.fileName,
+                presetImageMimeType: compressed.mimeType
+              }
+            });
+          } catch (err: unknown) {
+            setPresetError(err instanceof Error ? err.message : 'Failed to process image.');
+          } finally {
+            setIsCompressingPreset(false);
+          }
+        };
+
+        const handleRemovePreset = (): void => {
+          const nextProps = { ...block.props };
+          delete nextProps.presetImageDataUrl;
+          delete nextProps.presetImageName;
+          delete nextProps.presetImageMimeType;
+          onChangeBlock({ ...block, props: nextProps });
+          setPresetError(null);
+        };
+
+        return (
+          <div className="space-y-3 border-t border-zinc-200/70 pt-3">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-zinc-400">
+              <ImageIcon className="h-3.5 w-3.5" />
+              Stimulus Media Settings
+            </h3>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-zinc-700">
+                Helper Description
+              </label>
+              <input
+                type="text"
+                value={strProp('description')}
+                onChange={(e) => updateProp('description', e.target.value)}
+                placeholder="Instructions shown above the media preview or uploader"
+                className="glass-input w-full !px-3 !py-1.5 !text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-zinc-700">
+                Accepted File Types
+              </label>
+              <select
+                value={acceptMode}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const nextAccept =
+                    val === 'images'
+                      ? ['image/*']
+                      : val === 'pdf'
+                        ? ['application/pdf']
+                        : ['image/*', 'application/pdf'];
+                  updateProp('accept', nextAccept);
+                }}
+                className="glass-input w-full !px-2.5 !py-1.5 !text-xs"
+              >
+                <option value="both">Images &amp; PDF</option>
+                <option value="images">Images Only</option>
+                <option value="pdf">PDF Only</option>
+              </select>
+            </div>
+
+            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-zinc-700">
+              <input
+                type="checkbox"
+                checked={allowStudentUpload}
+                onChange={(e) => updateProp('allowStudentUpload', e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900"
+              />
+              Allow student to upload / replace file
+            </label>
+
+            {/* Optional Fixed Stimulus Image */}
+            <div className="space-y-2 rounded-xl border border-zinc-200/80 bg-white/60 p-3">
+              <div className="text-xs font-semibold text-zinc-800">
+                Optional Fixed Stimulus Image
+              </div>
+              <p className="text-[11px] leading-snug text-zinc-500">
+                Pre-attach a diagram, chart, or visual stimulus shown automatically to every student
+                and passed directly to the AI evaluator.
+              </p>
+
+              <input
+                ref={presetFileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => void handlePresetFileChange(e)}
+                className="hidden"
+              />
+
+              {presetError && (
+                <p className="text-[11px] font-medium text-rose-700">{presetError}</p>
+              )}
+
+              {presetDataUrl ? (
+                <div className="space-y-2">
+                  <div className="overflow-hidden rounded-lg border border-zinc-200/80 bg-white">
+                    <img
+                      src={presetDataUrl}
+                      alt={presetName}
+                      className="max-h-36 w-full object-contain"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-[11px] font-medium text-zinc-600">
+                      {presetName}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRemovePreset}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Remove Preset Image
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isCompressingPreset}
+                  onClick={() => presetFileInputRef.current?.click()}
+                  className="glass-btn-secondary w-full !py-2 !text-xs"
+                >
+                  {isCompressingPreset ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <UploadCloud className="h-3.5 w-3.5" />
+                  )}
+                  {isCompressingPreset ? 'Compressing image...' : 'Upload Fixed Stimulus Image'}
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {block.type === 'action_button' && (
         <div className="space-y-3 border-t border-zinc-200/70 pt-3">

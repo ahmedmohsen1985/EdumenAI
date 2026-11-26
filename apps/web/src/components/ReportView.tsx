@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   ChevronDown,
   Download,
+  FileText,
+  Image as ImageIcon,
   Loader2,
   Printer,
   Send,
@@ -697,6 +699,76 @@ export function ReportView({ reportId }: ReportViewProps): React.ReactElement {
           </section>
         );
       })()}
+
+      {/* Attached Stimulus Media */}
+      {report.mediaAttachments && report.mediaAttachments.length > 0 && (
+        <section className="glass-panel p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-900/[0.06] pb-3">
+            <h2 className="flex items-center gap-2 text-base font-bold text-zinc-950">
+              <ImageIcon className="h-4 w-4 text-zinc-600" />
+              Attached Stimulus Media ({report.mediaAttachments.length})
+            </h2>
+          </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {report.mediaAttachments.map((media, idx) => {
+              const isImage =
+                Boolean(media.dataUrl) && media.dataUrl!.startsWith('data:image/');
+              const isPdf =
+                media.mimeType === 'application/pdf' ||
+                media.fileName.toLowerCase().endsWith('.pdf');
+
+              return (
+                <div
+                  key={`${media.fileName}-${idx}`}
+                  className="overflow-hidden rounded-xl border border-zinc-900/[0.06] bg-white/75 p-3 shadow-sm"
+                >
+                  {isImage ? (
+                    <div className="overflow-hidden rounded-lg border border-zinc-200/70 bg-white">
+                      <img
+                        src={media.dataUrl}
+                        alt={media.fileName}
+                        className="max-h-72 w-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 rounded-lg border border-zinc-200/70 bg-zinc-50/80 px-3.5 py-4 text-zinc-700">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-white">
+                        {isPdf ? (
+                          <FileText className="h-4 w-4" />
+                        ) : (
+                          <ImageIcon className="h-4 w-4" />
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-bold text-zinc-900">
+                          {media.fileName}
+                        </div>
+                        <div className="text-[11px] text-zinc-500">
+                          {isPdf
+                            ? 'PDF Stimulus Document'
+                            : media.omittedFromStorage
+                              ? 'Attachment archived (preview omitted)'
+                              : media.mimeType}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate font-medium text-zinc-700" title={media.fileName}>
+                      {media.fileName}
+                    </span>
+                    <span className="glass-pill !text-[10px]">
+                      {media.source === 'preset' ? 'Fixed Stimulus' : 'Uploaded Media'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Collapsible Audit Accordion */}
       <section className="glass-panel overflow-hidden">

@@ -33,6 +33,7 @@ import {
   type TelegramTestMessageResult
 } from '../../lib/admin-settings-api';
 import { getCached, isCacheFresh } from '../../lib/client-cache';
+import { validateTelegramGroupId } from '../../lib/validation';
 import { PageEntrance, SPRING_GENTLE } from '../ui/MotionPrimitives';
 
 function configSourceLabel(source: TelegramConfigView['source']): string {
@@ -151,10 +152,21 @@ export function TelegramSettingsManager(): React.ReactElement {
     }
   };
 
+  const newChatIdErr = newChatId ? validateTelegramGroupId(newChatId, true) : null;
+  const editChatIdErr = editChatId ? validateTelegramGroupId(editChatId, true) : null;
+  const customTestChatIdErr = customTestChatId
+    ? validateTelegramGroupId(customTestChatId, true)
+    : null;
+
   const handleCreateTarget = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!newName.trim() || !newChatId.trim()) {
       setCreateTargetError('Target name and Chat ID are required.');
+      return;
+    }
+    const chatErr = validateTelegramGroupId(newChatId, true);
+    if (chatErr) {
+      setCreateTargetError(chatErr);
       return;
     }
 
@@ -194,6 +206,11 @@ export function TelegramSettingsManager(): React.ReactElement {
 
   const handleSaveEdit = async (id: string): Promise<void> => {
     if (!editName.trim() || !editChatId.trim()) return;
+    const chatErr = validateTelegramGroupId(editChatId, true);
+    if (chatErr) {
+      setLoadError(chatErr);
+      return;
+    }
     setIsSavingEdit(true);
     try {
       await updateTelegramTarget(id, {
@@ -247,6 +264,11 @@ export function TelegramSettingsManager(): React.ReactElement {
   const handleSendCustomTest = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!customTestChatId.trim()) return;
+    const chatErr = validateTelegramGroupId(customTestChatId, true);
+    if (chatErr) {
+      setCustomTestResult({ ok: false, chatId: customTestChatId.trim(), error: chatErr });
+      return;
+    }
     setIsSendingCustomTest(true);
     setCustomTestResult(null);
     try {
@@ -468,8 +490,14 @@ export function TelegramSettingsManager(): React.ReactElement {
                                 type="text"
                                 value={editChatId}
                                 onChange={(e) => setEditChatId(e.target.value)}
-                                className="glass-input mt-1 !py-1.5 font-mono"
+                                aria-invalid={Boolean(editChatIdErr)}
+                                className={`glass-input mt-1 !py-1.5 font-mono ${editChatIdErr ? '!border-rose-300' : ''}`}
                               />
+                              {editChatIdErr && (
+                                <p className="mt-1 text-[11px] font-medium text-rose-700">
+                                  {editChatIdErr}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div>
@@ -671,8 +699,12 @@ export function TelegramSettingsManager(): React.ReactElement {
                     value={newChatId}
                     onChange={(e) => setNewChatId(e.target.value)}
                     placeholder="-1001234567890"
-                    className="glass-input mt-1 !py-2 font-mono"
+                    aria-invalid={Boolean(newChatIdErr)}
+                    className={`glass-input mt-1 !py-2 font-mono ${newChatIdErr ? '!border-rose-300' : ''}`}
                   />
+                  {newChatIdErr && (
+                    <p className="mt-1 text-[11px] font-medium text-rose-700">{newChatIdErr}</p>
+                  )}
                 </div>
               </div>
 
@@ -750,9 +782,15 @@ export function TelegramSettingsManager(): React.ReactElement {
                     type="text"
                     value={customTestChatId}
                     onChange={(e) => setCustomTestChatId(e.target.value)}
-                    placeholder="-1001234567890 or @username"
-                    className="glass-input mt-1 !py-2 font-mono"
+                    placeholder="-1001234567890"
+                    aria-invalid={Boolean(customTestChatIdErr)}
+                    className={`glass-input mt-1 !py-2 font-mono ${customTestChatIdErr ? '!border-rose-300' : ''}`}
                   />
+                  {customTestChatIdErr && (
+                    <p className="mt-1 text-[11px] font-medium text-rose-700">
+                      {customTestChatIdErr}
+                    </p>
+                  )}
                 </div>
 
                 <div>

@@ -1,10 +1,12 @@
 import { Prisma, type User } from '@prisma/client';
 import {
   IntegrityLogSchema,
+  MediaAttachmentSchema,
   type ErrorItem,
   type IntegrityLog,
   type Justification,
   type MarkingReport,
+  type MediaAttachment,
   type PersistedReport,
   type StudentInfo,
   type TranscriptionMeta
@@ -139,6 +141,52 @@ function mapReportToPersisted(
     }
   }
 
+  let mediaAttachments: MediaAttachment[] | null = null;
+  const rawAttachments = formData?._mediaAttachments;
+  if (Array.isArray(rawAttachments) && rawAttachments.length > 0) {
+    const presetLookup = new Map<string, string>();
+    const templateSchema =
+      submission.promptVersion.templateSchema &&
+      typeof submission.promptVersion.templateSchema === 'object' &&
+      !Array.isArray(submission.promptVersion.templateSchema)
+        ? (submission.promptVersion.templateSchema as {
+            blocks?: Array<{ id?: unknown; type?: unknown; props?: unknown }>;
+          })
+        : null;
+
+    if (Array.isArray(templateSchema?.blocks)) {
+      for (const block of templateSchema.blocks) {
+        if (block?.type !== 'media_upload' || typeof block.id !== 'string') continue;
+        const props =
+          block.props && typeof block.props === 'object' && !Array.isArray(block.props)
+            ? (block.props as Record<string, unknown>)
+            : null;
+        if (typeof props?.presetImageDataUrl === 'string' && props.presetImageDataUrl.trim()) {
+          presetLookup.set(block.id, props.presetImageDataUrl.trim());
+        }
+      }
+    }
+
+    const hydrated: MediaAttachment[] = [];
+    for (const item of rawAttachments) {
+      const parsed = MediaAttachmentSchema.safeParse(item);
+      if (!parsed.success) continue;
+      const att = parsed.data;
+      if (att.source === 'preset' && !att.dataUrl && att.presetBlockId) {
+        const presetUrl = presetLookup.get(att.presetBlockId);
+        if (presetUrl) {
+          hydrated.push({ ...att, dataUrl: presetUrl });
+          continue;
+        }
+      }
+      hydrated.push(att);
+    }
+
+    if (hydrated.length > 0) {
+      mediaAttachments = hydrated;
+    }
+  }
+
   return {
     id: record.id,
     submissionId: submission.id,
@@ -159,6 +207,7 @@ function mapReportToPersisted(
     isPreview: submission.isPreview,
     formData,
     integrityLog,
+    mediaAttachments,
     marks: {
       content: record.marksContent,
       content_max: record.marksContentMax,

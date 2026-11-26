@@ -9,6 +9,13 @@ import type {
   UpdateProfileRequest
 } from '@edumenai/shared';
 import { fetchMyCredits, updateMyProfile } from '../../lib/api';
+import {
+  validateClassName,
+  validateFullName,
+  validatePhone,
+  validateSchoolName,
+  validateTelegramUserId
+} from '../../lib/validation';
 import { useAuth } from '../auth/AuthProvider';
 import { Banner, Field, SectionTitle, errorMessage, toNullable } from './shared';
 
@@ -83,16 +90,26 @@ export function ProfileTab({ user, onSaved }: ProfileTabProps): React.ReactEleme
   const isInstructor = user.role === 'INSTRUCTOR';
   const isAdmin = user.role === 'ADMIN';
 
+  const nameErr = validateFullName(name);
+  const schoolErr = validateSchoolName(school, false);
+  const classErr = isStudent ? validateClassName(className, false) : null;
+  const telegramErr = isStudent || isAdmin ? validateTelegramUserId(telegramId, false) : null;
+  const parentPhoneErr = isStudent ? validatePhone(parentPhone, false) : null;
+  const parentTelegramErr = isStudent ? validateTelegramUserId(parentTelegramId, false) : null;
+  const firstProfileErr =
+    nameErr || schoolErr || classErr || telegramErr || parentPhoneErr || parentTelegramErr;
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setSuccess(null);
     setError(null);
 
-    const trimmedName = name.trim();
-    if (trimmedName.length < 2) {
-      setError('Please enter your full name (at least 2 characters).');
+    if (firstProfileErr) {
+      setError(firstProfileErr);
       return;
     }
+
+    const trimmedName = name.trim();
 
     let payload: UpdateProfileRequest;
     if (isStudent) {
@@ -155,26 +172,30 @@ export function ProfileTab({ user, onSaved }: ProfileTabProps): React.ReactEleme
         {error ? <Banner kind="error">{error}</Banner> : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field id="profile-name" label="Name">
+          <Field id="profile-name" label="Full Name (First & Last)">
             <input
               id="profile-name"
-              className="glass-input"
+              className={`glass-input ${nameErr ? '!border-rose-300' : ''}`}
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={120}
               autoComplete="name"
               required
             />
+            {nameErr && <p className="mt-1 text-[11px] font-medium text-rose-700">{nameErr}</p>}
           </Field>
           <Field id="profile-school" label="School">
             <input
               id="profile-school"
-              className="glass-input"
+              className={`glass-input ${schoolErr ? '!border-rose-300' : ''}`}
               value={school}
               onChange={(e) => setSchool(e.target.value)}
               maxLength={160}
               autoComplete="organization"
             />
+            {schoolErr && (
+              <p className="mt-1 text-[11px] font-medium text-rose-700">{schoolErr}</p>
+            )}
           </Field>
 
           {isStudent ? (
@@ -182,56 +203,80 @@ export function ProfileTab({ user, onSaved }: ProfileTabProps): React.ReactEleme
               <Field id="profile-class" label="Class">
                 <input
                   id="profile-class"
-                  className="glass-input"
+                  className={`glass-input ${classErr ? '!border-rose-300' : ''}`}
                   value={className}
                   onChange={(e) => setClassName(e.target.value)}
-                  maxLength={120}
+                  maxLength={60}
                 />
+                {classErr && (
+                  <p className="mt-1 text-[11px] font-medium text-rose-700">{classErr}</p>
+                )}
               </Field>
-              <Field id="profile-telegram" label="Student Telegram ID">
+              <Field
+                id="profile-telegram"
+                label="Student Telegram ID"
+                hint="Numeric ID from @userinfobot"
+              >
                 <input
                   id="profile-telegram"
-                  className="glass-input"
+                  className={`glass-input ${telegramErr ? '!border-rose-300' : ''}`}
                   value={telegramId}
                   onChange={(e) => setTelegramId(e.target.value)}
-                  maxLength={120}
-                  placeholder="@username"
+                  maxLength={20}
+                  placeholder="e.g. 123456789"
                 />
+                {telegramErr && (
+                  <p className="mt-1 text-[11px] font-medium text-rose-700">{telegramErr}</p>
+                )}
               </Field>
               <Field id="profile-parent-phone" label="Parent Phone">
                 <input
                   id="profile-parent-phone"
-                  className="glass-input"
+                  className={`glass-input ${parentPhoneErr ? '!border-rose-300' : ''}`}
                   type="tel"
                   value={parentPhone}
                   onChange={(e) => setParentPhone(e.target.value)}
                   maxLength={40}
                   autoComplete="tel"
+                  placeholder="+2010XXXXXXXX"
                 />
+                {parentPhoneErr && (
+                  <p className="mt-1 text-[11px] font-medium text-rose-700">{parentPhoneErr}</p>
+                )}
               </Field>
-              <Field id="profile-parent-telegram" label="Parent Telegram ID">
+              <Field
+                id="profile-parent-telegram"
+                label="Parent Telegram ID"
+                hint="Numeric ID from @userinfobot"
+              >
                 <input
                   id="profile-parent-telegram"
-                  className="glass-input"
+                  className={`glass-input ${parentTelegramErr ? '!border-rose-300' : ''}`}
                   value={parentTelegramId}
                   onChange={(e) => setParentTelegramId(e.target.value)}
-                  maxLength={120}
-                  placeholder="@username"
+                  maxLength={20}
+                  placeholder="e.g. 987654321"
                 />
+                {parentTelegramErr && (
+                  <p className="mt-1 text-[11px] font-medium text-rose-700">{parentTelegramErr}</p>
+                )}
               </Field>
             </>
           ) : null}
 
           {isAdmin ? (
-            <Field id="profile-telegram" label="Telegram ID">
+            <Field id="profile-telegram" label="Telegram ID" hint="Numeric ID from @userinfobot">
               <input
                 id="profile-telegram"
-                className="glass-input"
+                className={`glass-input ${telegramErr ? '!border-rose-300' : ''}`}
                 value={telegramId}
                 onChange={(e) => setTelegramId(e.target.value)}
-                maxLength={120}
-                placeholder="@username"
+                maxLength={20}
+                placeholder="e.g. 123456789"
               />
+              {telegramErr && (
+                <p className="mt-1 text-[11px] font-medium text-rose-700">{telegramErr}</p>
+              )}
             </Field>
           ) : null}
         </div>

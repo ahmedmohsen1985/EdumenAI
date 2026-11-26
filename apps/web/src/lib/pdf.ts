@@ -562,6 +562,72 @@ export function generateReportPdf(
   });
   y += 4;
 
+  // --- STIMULUS MEDIA ---
+  const stimulusMedia = Array.isArray(report.mediaAttachments) ? report.mediaAttachments : [];
+  if (stimulusMedia.length > 0) {
+    addSectionHeader(`STIMULUS MEDIA (${stimulusMedia.length})`, colours.primary);
+    for (const media of stimulusMedia) {
+      const dataUrl = typeof media.dataUrl === 'string' ? media.dataUrl : '';
+      if (dataUrl.startsWith('data:image/')) {
+        try {
+          const props = doc.getImageProperties(dataUrl);
+          const rawW = props.width || 800;
+          const rawH = props.height || 600;
+          const maxW = 110;
+          const maxH = 65;
+          const scale = Math.min(maxW / rawW, maxH / rawH);
+          const drawW = Math.max(20, rawW * scale);
+          const drawH = Math.max(15, rawH * scale);
+
+          checkPageBreak(drawH + 12);
+          const imgX = margin.left + (contentWidth - drawW) / 2;
+          doc.setFillColor(...colours.lightGrayBg);
+          doc.setDrawColor(...colours.borderGray);
+          doc.setLineWidth(0.3);
+          doc.roundedRect(imgX - 2, y, drawW + 4, drawH + 4, 1.5, 1.5, 'FD');
+
+          const fmt =
+            dataUrl.startsWith('data:image/png')
+              ? 'PNG'
+              : dataUrl.startsWith('data:image/webp')
+                ? 'WEBP'
+                : 'JPEG';
+          doc.addImage(dataUrl, fmt, imgX, y + 2, drawW, drawH);
+          y += drawH + 6.5;
+
+          doc.setFontSize(7.5);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...colours.gray);
+          doc.text(
+            pdfSafe(`${media.fileName} (${media.source === 'preset' ? 'Fixed Stimulus' : 'Uploaded Media'})`),
+            pageWidth / 2,
+            y,
+            { align: 'center' }
+          );
+          y += 5;
+          continue;
+        } catch {
+          // Fall through to clean file pill if jsPDF rejects image format
+        }
+      }
+
+      checkPageBreak(8);
+      doc.setFillColor(...colours.lightGrayBg);
+      doc.setDrawColor(...colours.borderGray);
+      doc.roundedRect(margin.left + 2, y, contentWidth - 4, 6.5, 1.5, 1.5, 'FD');
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...colours.dark);
+      doc.text(
+        pdfSafe(`Attached File: ${media.fileName} (${media.mimeType})`),
+        margin.left + 5,
+        y + 4.3
+      );
+      y += 9;
+    }
+    y += 2;
+  }
+
   // --- STUDENT SUBMITTED ARTICLE ---
   addSectionHeader("STUDENT'S SUBMITTED RESPONSE", colours.primary);
   const words = countWords(report.finalText);

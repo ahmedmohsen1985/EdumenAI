@@ -27,6 +27,7 @@ import {
   type InstructorTelegramData
 } from '../../../lib/instructor-api';
 import { getCached, isCacheFresh } from '../../../lib/client-cache';
+import { validateTelegramGroupId } from '../../../lib/validation';
 import { InstructorShell } from '../../../components/instructor/InstructorShell';
 import { PageEntrance, SPRING_GENTLE } from '../../../components/ui/MotionPrimitives';
 
@@ -108,12 +109,20 @@ function InstructorTelegramContent(): React.ReactElement {
     setBanner(null);
   };
 
+  const chatIdInputErr = chatIdInput ? validateTelegramGroupId(chatIdInput, true) : null;
+  const testChatIdErr = testChatId ? validateTelegramGroupId(testChatId, true) : null;
+
   const handleSaveTarget = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     const name = nameInput.trim();
     const chatId = chatIdInput.trim();
     if (!name || !chatId) {
       setBanner({ ok: false, message: 'Group name and Chat ID are required.' });
+      return;
+    }
+    const chatErr = validateTelegramGroupId(chatId, true);
+    if (chatErr) {
+      setBanner({ ok: false, message: chatErr });
       return;
     }
 
@@ -197,6 +206,11 @@ function InstructorTelegramContent(): React.ReactElement {
     const chatId = testChatId.trim();
     if (!chatId) {
       setBanner({ ok: false, message: 'Enter or select a Chat ID to send a test message.' });
+      return;
+    }
+    const chatErr = validateTelegramGroupId(chatId, true);
+    if (chatErr) {
+      setBanner({ ok: false, message: chatErr });
       return;
     }
 
@@ -544,8 +558,12 @@ function InstructorTelegramContent(): React.ReactElement {
                     value={chatIdInput}
                     onChange={(e) => setChatIdInput(e.target.value)}
                     placeholder="-1001234567890"
-                    className="glass-input font-mono text-xs"
+                    aria-invalid={Boolean(chatIdInputErr)}
+                    className={`glass-input font-mono text-xs ${chatIdInputErr ? '!border-rose-300' : ''}`}
                   />
+                  {chatIdInputErr && (
+                    <p className="mt-1 text-[11px] font-medium text-rose-700">{chatIdInputErr}</p>
+                  )}
                 </div>
               </div>
 
@@ -654,8 +672,12 @@ function InstructorTelegramContent(): React.ReactElement {
                   value={testChatId}
                   onChange={(e) => setTestChatId(e.target.value)}
                   placeholder="-1001234567890"
-                  className="glass-input font-mono text-xs"
+                  aria-invalid={Boolean(testChatIdErr)}
+                  className={`glass-input font-mono text-xs ${testChatIdErr ? '!border-rose-300' : ''}`}
                 />
+                {testChatIdErr && (
+                  <p className="mt-1 text-[11px] font-medium text-rose-700">{testChatIdErr}</p>
+                )}
               </div>
 
               <div>

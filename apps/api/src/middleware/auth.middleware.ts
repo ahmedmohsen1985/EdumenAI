@@ -60,6 +60,9 @@ function resolveCookieOptions() {
   };
 }
 
+export const TRUSTED_DEVICE_COOKIE_NAME = 'edumenai_trusted_device';
+export const TRUSTED_DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 export function setSessionCookie(res: Response, token: string): void {
   res.cookie(SESSION_COOKIE_NAME, token, {
     ...resolveCookieOptions(),
@@ -69,6 +72,17 @@ export function setSessionCookie(res: Response, token: string): void {
 
 export function clearSessionCookie(res: Response): void {
   res.clearCookie(SESSION_COOKIE_NAME, resolveCookieOptions());
+}
+
+export function setTrustedDeviceCookie(res: Response, token: string): void {
+  res.cookie(TRUSTED_DEVICE_COOKIE_NAME, token, {
+    ...resolveCookieOptions(),
+    maxAge: TRUSTED_DEVICE_TTL_MS
+  });
+}
+
+export function clearTrustedDeviceCookie(res: Response): void {
+  res.clearCookie(TRUSTED_DEVICE_COOKIE_NAME, resolveCookieOptions());
 }
 
 export async function attachAuthMiddleware(

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AiTaskTypeSchema } from './template.schema.js';
+import { TelegramGroupChatIdSchema } from './validation.js';
 
 export const AiProviderIdSchema = z.enum(['google', 'openai', 'anthropic', 'openrouter']);
 
@@ -59,7 +60,7 @@ export const TelegramConfigViewSchema = z.object({
 
 export const CreateTelegramTargetSchema = z.object({
   name: z.string().min(1),
-  chatId: z.string().min(1),
+  chatId: TelegramGroupChatIdSchema,
   description: z.string().optional(),
   isDefault: z.boolean().optional(),
   isActive: z.boolean().optional()
